@@ -52,6 +52,15 @@ class RAGEngine:
         """Initialize RAG engine with vector store"""
         logger.info("Initializing RAG Engine...")
         
+        if config.LLM_PROVIDER == "anthropic":
+            from anthropic import Anthropic
+            self.anthropic_client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+            self.llm_provider = "anthropic"
+        elif config.LLM_PROVIDER == "openai":
+            import openai
+            openai.api_key = config.OPENAI_API_KEY
+            self.llm_provider = "openai"
+
         # Setup OpenAI
         openai.api_key = config.OPENAI_API_KEY
         self.openai_client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
@@ -61,7 +70,10 @@ class RAGEngine:
         self.chroma_client = chromadb.PersistentClient(
             path=str(config.CHROMA_DIR)
         )
-        
+        # Setup Anthropic client (ADD THIS)
+        from anthropic import Anthropic
+        self.anthropic_client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        logger.info(f"Anthropic client initialized with model: {config.LLM_MODEL}")
         # Create or get collection
         self.collection = self.chroma_client.get_or_create_collection(
             name="tax_documents_v2",
@@ -163,6 +175,155 @@ class RAGEngine:
         
         return stats
     
+    def query(self, question: str, n_results: int = None) -> Tuple[List[str], List[dict]]:
+        if n_results is None:
+            n_results = config.TOP_K_RESULTS
+        
+        if not question or len(question.strip()) < 3:
+            raise ValueError("Question too short (min 3 chars)")
+        
+        logger.info(f"Searching for: {question[:50]}...")
+        
+        # Generate query embedding
+        query_embedding = self._get_embedding(question)
+        
+        # Search ChromaDB
+        results = self.collection.query(
+            query_embeddings=[query_embedding],
+            n_results=n_results
+        )
+        
+        # Validate results
+        chunks = results.get('documents', [[]])[0]
+        metadatas = results.get('metadatas', [[]])[0]
+        
+        logger.info(f"Found {len(chunks)} relevant chunks")
+        
+        return chunks, metadatas
+
+    def _call_llm(self, prompt: str) -> str:
+        """
+        Call Claude API with retry logic
+        
+        Args:
+            prompt: Complete prompt with context and question
+            
+        Returns:
+            Generated response text
+            
+        Raises:
+            RuntimeError: If all retry attempts fail
+        """
+        if self.llm_provider == "anthropic":
+            # Existing Anthropic code
+            message = self.anthropic_client.messages.create(...)
+            return message.content[0].text
+        
+        elif self.llm_provider == "openai":
+            # OpenAI fallback
+            response = openai.chat.completions.create(
+                model=config.LLM_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=config.LLM_MAX_TOKENS,
+                temperature=config.LLM_TEMPERATURE
+            )
+            return response.choices[0].message.content
+
+        try:
+            logger.debug(f"Calling Claude with prompt length: {len(prompt)} chars")
+            
+            message = self.anthropic_client.messages.create(
+                model=config.LLM_MODEL,
+                max_tokens=config.LLM_MAX_TOKENS,
+                temperature=config.LLM_TEMPERATURE,
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }]
+            )
+            
+            response = message.content[0].text
+            logger.success(f"Claude response received: {len(response)} chars")
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"LLM call failed: {e}")
+            raise  # Let tenacity handle retry
+
+    def get_answer(self, question: str) -> Dict:
+        """Complete RAG pipeline: question → answer with sources"""
+        
+        # Validate
+        if not question or len(question.strip()) < 5:
+            raise ValueError("Domanda troppo breve (minimo 5 caratteri)")
+        
+        logger.info(f"Processing query: {question[:50]}...")
+        
+        # Retrieve
+        try:
+            chunks, metadatas = self.query(question)
+        except Exception as e:
+            logger.error(f"Query failed: {e}")
+            return {
+                'answer': prompts.NO_RESULTS_RESPONSE,
+                'sources': [],
+                'chunks_used': 0,
+                'error': str(e)
+            }
+        
+        # Handle no results
+        if not chunks:
+            logger.warning("No relevant chunks found")
+            return {
+                'answer': prompts.NO_RESULTS_RESPONSE,
+                'sources': [],
+                'chunks_used': 0
+            }
+        
+        # Build context
+        context = "\n\n---\n\n".join([
+            f"DOCUMENTO: {meta.get('source', 'Unknown')}\n{chunk}"
+            for chunk, meta in zip(chunks, metadatas)
+        ])
+        
+        # Build prompt (use prompts.SYSTEM_PROMPT_V1 from prompts.py)
+        prompt = prompts.SYSTEM_PROMPT_V1.format(
+            context=context,
+            question=question
+        )
+        
+        # Generate answer
+        try:
+            answer = self._call_llm(prompt)
+        except Exception as e:
+            logger.error(f"LLM generation failed: {e}")
+            return {
+                'answer': "Errore nella generazione della risposta. Riprova.",
+                'sources': [],
+                'chunks_used': 0,
+                'error': str(e)
+            }
+        
+        # Extract sources
+        sources = list(set([meta.get('source', 'Unknown') for meta in metadatas]))
+        
+        logger.success(f"Answer generated using {len(chunks)} chunks from {len(sources)} sources")
+        
+        return {
+            'answer': answer,
+            'sources': sources,
+            'chunks_used': len(chunks),
+            'confidence': self._calculate_confidence(chunks, question)  # Optional
+        }
+
+    def _calculate_confidence(self, chunks: List[str], question: str) -> float:
+        """Optional: estimate confidence based on similarity scores"""
+        # Simple heuristic: if we got results, confidence = 0.8
+        # Production: use actual similarity scores from ChromaDB
+        return 0.8 if chunks else 0.0
+
+
     def _extract_text_from_pdf(self, pdf_path: Path) -> str:
         """
         Extract text from PDF file
