@@ -3,6 +3,7 @@ Configuration Management
 Handles API keys, paths, and model settings
 """
 import os
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -12,8 +13,24 @@ load_dotenv()
 # ============================================================================
 # API KEYS - CRITICAL
 # ============================================================================
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Primary LLM (Anthropic)
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+USE_ANTHROPIC = os.getenv("USE_ANTHROPIC", "true").lower() == "true"
+
+# Fallback LLM (OpenAI)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+USE_OPENAI_FALLBACK = os.getenv("USE_OPENAI_FALLBACK", "false").lower() == "true"
+
+if USE_ANTHROPIC:
+    LLM_MODEL = "claude-3-5-sonnet-20240620"
+    LLM_PROVIDER = "anthropic"
+elif USE_OPENAI_FALLBACK:
+    LLM_MODEL = "gpt-4o"  # or "gpt-4-turbo"
+    LLM_PROVIDER = "openai"
+else:
+    raise ValueError("No LLM provider configured")
+
 
 # Validate keys on import
 if not OPENAI_API_KEY:
@@ -58,7 +75,7 @@ EMBEDDING_DIMENSION = 1536  # text-embedding-3-small default
 # ============================================================================
 # LLM CONFIGURATION
 # ============================================================================
-LLM_MODEL = "claude-3-5-sonnet-20241022"
+# LLM_MODEL = "claude-3-5-sonnet-20240620"
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.3"))
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "1000"))
 
