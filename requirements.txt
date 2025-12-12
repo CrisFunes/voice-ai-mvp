@@ -1,33 +1,32 @@
-# Voice AI Agent MVP - Requirements
-# Python 3.10+ required
-# Tested on Windows 11, Python 3.11
-
-# Core Framework
+# Core
 streamlit==1.31.0
+python-dotenv==1.0.0
 
-# Environment Management
-python-dotenv==1.0.1
-
-# Vector Database (Windows-compatible version)
-# Note: Using chromadb==0.4.15 to avoid pulsar-client dependency issues on Windows
-chromadb==0.4.15
-
-# AI/ML APIs
+# AI/ML - VERSIONES ESPECÍFICAS
 openai==1.12.0
 anthropic==0.18.1
 
-# Document Processing
-langchain==0.1.9
-pypdf==4.0.1
+# ChromaDB con dependencias fijas
+chromadb==0.4.22
+pydantic==1.10.13
+numpy<2.0,>=1.22.0
+packaging<24,>=23.2
+protobuf<5.0,>=3.20
 
-# Voice Recording Component
-audio-recorder-streamlit==0.0.8
+# LangChain
+langchain==0.1.9
+langchain-community==0.0.38
+langchain-core==0.1.53
+
+# Document Processing
+pypdf==3.17.0
 
 # Utilities
 tenacity==8.2.3
+loguru==0.7.2
 
-# Note: NumPy and other dependencies will be installed automatically
-# If you encounter NumPy installation issues on Windows:
-# 1. Upgrade pip: python -m pip install --upgrade pip setuptools wheel
-# 2. Install NumPy first: pip install numpy
-# 3. Then install: pip install -r requirements.txt
+# Voice
+audio-recorder-streamlit==0.0.8
+
+# ONNX Runtime (Windows compatible)
+onnxruntime==1.16.0
