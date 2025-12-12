@@ -4,7 +4,7 @@ python-dotenv==1.0.0
 
 # AI/ML 
 openai==2.11.0
-anthropic==0.18.1
+anthropic==0.40.0
 
 # ChromaDB
 chromadb==0.4.22
