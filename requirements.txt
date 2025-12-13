@@ -30,3 +30,7 @@ audio-recorder-streamlit==0.0.8
 
 # ONNX Runtime 
 onnxruntime==1.16.0
+
+# Testing (development only)
+pytest==9.0.2
+pytest-asyncio==1.3.0
