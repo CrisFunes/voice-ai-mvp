@@ -8,15 +8,22 @@ anthropic==0.40.0
 
 # ChromaDB
 chromadb==0.4.22
-pydantic==1.10.13
+pydantic==2.12.5
+pydantic-core==2.41.5
 numpy<2.0,>=1.22.0
 packaging<24,>=23.2
 protobuf<5.0,>=3.20
 
-# LangChain
-langchain==0.1.9
-langchain-community==0.0.38
-langchain-core==0.1.53
+# LangChain (0.3.x series - UPDATED)
+langchain>=0.3.18
+langchain-community>=0.3.17
+langchain-core>=0.3.0
+langchain-text-splitters>=0.3.0
+langsmith>=0.3.0
+
+# LangGraph
+langgraph>=1.0.5
+langgraph-checkpoint>=3.0.0
 
 # Document Processing
 pypdf==3.17.0
@@ -31,6 +38,10 @@ audio-recorder-streamlit==0.0.8
 # ONNX Runtime 
 onnxruntime==1.16.0
 
-# Testing (development only)
+# Database (NEW - Day 4)
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+
+# Testing
 pytest==9.0.2
 pytest-asyncio==1.3.0
