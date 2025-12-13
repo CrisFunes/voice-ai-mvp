@@ -9,7 +9,7 @@ import chromadb
 from chromadb.config import Settings
 from pypdf import PdfReader
 import openai
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
 import sys
 
