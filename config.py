@@ -98,6 +98,21 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FORMAT = "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
 
 # ============================================================================
+# DATABASE CONFIGURATION
+# ============================================================================
+
+# Database URL (can be overridden by environment variable)
+# Version B: SQLite (local file)
+# Version A: PostgreSQL (will set DATABASE_URL env var)
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:///./demo_v2.db"  # Default to SQLite
+)
+
+# Service mode (mock vs real implementations)
+SERVICE_MODE = os.getenv("SERVICE_MODE", "mock")  # "mock" or "real"
+
+# ============================================================================
 # DISPLAY CONFIGURATION ON IMPORT
 # ============================================================================
 print("=" * 70)
