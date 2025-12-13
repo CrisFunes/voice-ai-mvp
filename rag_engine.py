@@ -15,7 +15,7 @@ import sys
 
 import config
 import prompts
-
+from tenacity import retry, stop_after_attempt, wait_exponential
 # ============================================================================
 # LOGGING SETUP
 # ============================================================================
@@ -200,7 +200,8 @@ class RAGEngine:
         logger.info(f"Found {len(chunks)} relevant chunks")
         
         return chunks, metadatas
-
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def _call_llm(self, prompt: str) -> str:
         """
         Call Claude API with retry logic
