@@ -112,6 +112,17 @@ DATABASE_URL = os.getenv(
 # Service mode (mock vs real implementations)
 SERVICE_MODE = os.getenv("SERVICE_MODE", "mock")  # "mock" or "real"
 
+VALID_SERVICE_MODES = ["mock", "real"]
+
+if SERVICE_MODE not in VALID_SERVICE_MODES:
+    raise ValueError(
+        f"\n{'=' * 70}\n"
+        f"❌ Invalid SERVICE_MODE: '{SERVICE_MODE}'\n"
+        f"Valid options: {VALID_SERVICE_MODES}\n"
+        f"Set in .env: SERVICE_MODE=mock or SERVICE_MODE=real\n"
+        f"{'=' * 70}\n"
+    )
+
 # ============================================================================
 # DISPLAY CONFIGURATION ON IMPORT
 # ============================================================================
