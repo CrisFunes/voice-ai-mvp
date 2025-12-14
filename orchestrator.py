@@ -135,7 +135,10 @@ INTENTI POSSIBILI:
 - booking: Prenotare, modificare, cancellare un appuntamento
 - routing: Parlare con un commercialista specifico
 - office_info: Orari ufficio, indirizzo, contatti
-- lead: Nuovo potenziale cliente che chiede informazioni
+- lead: Nuovo potenziale cliente che chiede informazioni SPECIFICHE sui servizi
+- unknown: Saluti generici, domande non correlate, messaggi poco chiari
+
+IMPORTANTE: Se la richiesta è solo un saluto ("ciao", "come stai") o non ha intento chiaro, classifica come UNKNOWN.
 
 RICHIESTA:
 "{text}"
@@ -207,26 +210,30 @@ Rispondi SOLO con un JSON:
 
 def execute_action_node(state: ConversationState) -> ConversationState:
     """
-    Execute action based on intent.
+    Execute action based on intent using real service layer.
     
     Routes to appropriate service:
-    - TAX_QUERY → RAG engine
-    - BOOKING → Booking service (mock)
-    - ROUTING → Routing service (mock)
-    - OFFICE_INFO → Info service (mock)
-    - LEAD → Lead service (mock)
+    - TAX_QUERY → RAG engine (real)
+    - BOOKING → BookingService (real DB writes)
+    - ROUTING → ClientService (real DB lookups)
+    - OFFICE_INFO → OfficeInfoService (real DB queries)
+    - LEAD → Lead capture (mock for now)
     """
     logger.info("=== EXECUTE ACTION NODE ===")
     state["current_node"] = "execute_action"
     
     intent = state.get("intent", Intent.UNKNOWN)
     text = state.get("transcript") or state.get("user_input", "")
+    entities = state.get("entities", {})
     
     logger.info(f"Executing action for intent: {intent.value}")
     
+    # Get database session
+    from database import get_db_session
+    
     try:
         if intent == Intent.TAX_QUERY:
-            # Use RAG engine
+            # ✅ Real RAG engine
             from rag_engine import RAGEngine
             
             rag = RAGEngine()
@@ -234,21 +241,52 @@ def execute_action_node(state: ConversationState) -> ConversationState:
             
             state["response"] = result["answer"]
             state["action_taken"] = "tax_query_answered"
-            
-            # Store sources in entities for reference
             state["entities"]["sources"] = result.get("sources", [])
             
             logger.success("Tax query answered via RAG")
         
         elif intent == Intent.APPOINTMENT_BOOKING:
-            # MOCK: Booking service
-            # Version A: Replace with real BookingService
+            # ✅ Real BookingService with DB writes
+            from services import BookingService
+            from datetime import datetime, timedelta
+            import re
             
-            entities = state.get("entities", {})
-            date = entities.get("date", "non specificata")
-            time = entities.get("time", "non specificata")
+            # Extract entities - check both entities dict and raw text
+            date_str = entities.get("date", "")
+            time_str = entities.get("time", "")
             
-            if date == "non specificata" or time == "non specificata":
+            # If date not in entities, try to parse from original text
+            text_lower = text.lower()
+            
+            # Detect relative days in text (check longer words first)
+            if not date_str and "dopodomani" in text_lower:
+                date_str = "dopodomani"
+            # Detect "domani" (tomorrow) in text
+            if not date_str and "domani" in text_lower:
+                date_str = "domani"
+            
+            # Detect "oggi" (today)
+            if not date_str and "oggi" in text_lower:
+                date_str = "oggi"
+            
+            # Extract time from text if not in entities
+            explicit_time = False
+            if entities.get("time"):
+                time_str = entities.get("time")
+                explicit_time = True
+
+            if not time_str:
+                # Match patterns like "15:00", "alle 15", "15"
+                time_match = re.search(r'(?:alle\s+)?(\d{1,2}):?(\d{2})?', text_lower)
+                if time_match:
+                    hour = time_match.group(1)
+                    minute = time_match.group(2) or "00"
+                    time_str = f"{hour}:{minute}"
+                    explicit_time = True
+
+            logger.info(f"Parsed booking request - date: {date_str}, time: {time_str}, explicit_time: {explicit_time}")
+            # Parse date/time from entities
+            if not date_str or not time_str:
                 state["response"] = (
                     "Per prenotare un appuntamento, ho bisogno di:\n"
                     "- Data preferita\n"
@@ -256,94 +294,222 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                     "Esempio: 'Vorrei un appuntamento domani alle 15:00'"
                 )
                 state["requires_followup"] = True
+                logger.warning("Missing date or time in booking request")
             else:
-                # Mock: Simulate booking
-                state["response"] = (
-                    f"✅ Appuntamento prenotato!\n\n"
-                    f"📅 Data: {date}\n"
-                    f"🕐 Orario: {time}\n"
-                    f"👤 Commercialista: Dott. Marco Rossi\n\n"
-                    f"Riceverai una conferma via email."
-                )
-                state["action_taken"] = "appointment_created"
-            
-            logger.info(f"Booking request processed (mock)")
-        
+                try:
+                    # Convert string to datetime
+                    # Map relative date strings to actual dates
+                    if "dopodomani" in date_str.lower():
+                        appointment_date = datetime.now() + timedelta(days=2)
+                        logger.info("Booking for day after tomorrow (dopodomani)")
+                    elif "domani" in date_str.lower():
+                        appointment_date = datetime.now() + timedelta(days=1)
+                        logger.info("Booking for tomorrow (domani)")
+                    elif "oggi" in date_str.lower():
+                        appointment_date = datetime.now()
+                        logger.info("Booking for today (oggi)")
+                    else:
+                        # Try to parse as date string
+                        # For now, default to tomorrow
+                        appointment_date = datetime.now() + timedelta(days=1)
+                        logger.warning(f"Could not parse date '{date_str}', defaulting to tomorrow")
+                    
+                    # Parse time (e.g., "15:00" or "15")
+                    if ":" in time_str:
+                        hour = int(time_str.split(":")[0])
+                        minute = int(time_str.split(":")[1])
+                    else:
+                        hour = int(time_str)
+                        minute = 0
+                    
+                    # Validate business hours (9-18)
+                    if hour < 9 or hour >= 18:
+                        state["response"] = (
+                            f"Mi dispiace, l'orario richiesto ({hour}:00) è fuori dall'orario d'ufficio.\n\n"
+                            f"Orari disponibili: 9:00 - 18:00\n"
+                            f"Scegli un altro orario."
+                        )
+                        state["requires_followup"] = True
+                        logger.warning(f"Invalid hour: {hour}")
+                    else:
+                        appointment_datetime = appointment_date.replace(
+                            hour=hour, minute=minute, second=0, microsecond=0
+                        )
+                        
+                        logger.info(f"Creating appointment for: {appointment_datetime}")
+                        
+                        # ✅ REAL DB WRITE
+                        with get_db_session() as db:
+                            booking_service = BookingService(db)
+                            
+                            # Get first client and accountant for demo
+                            # Production: extract from conversation context
+                            from models import Client, Accountant
+                            client = db.query(Client).first()
+                            accountant = db.query(Accountant).filter(
+                                Accountant.status == "active"
+                            ).first()
+                            
+                            if not client or not accountant:
+                                raise ValueError("No clients or accountants in database")
+                            
+                            logger.info(f"Booking for client: {client.company_name}, accountant: {accountant.name}")
+
+                            # Check requested slot availability and fallback to nearest if needed
+                            available_slots = booking_service.check_availability(accountant.id, appointment_datetime, 60)
+                            if appointment_datetime not in available_slots:
+                                if explicit_time:
+                                    # User explicitly requested this time; do not auto-reschedule
+                                    raise ValueError(f"Slot {appointment_datetime} not available for accountant {accountant.id}")
+                                else:
+                                    # Choose nearest available slot (min abs diff)
+                                    if available_slots:
+                                        chosen = min(available_slots, key=lambda s: abs((s - appointment_datetime).total_seconds()))
+                                        logger.warning(f"Requested slot {appointment_datetime} not available, choosing nearest {chosen}")
+                                        appointment_datetime = chosen
+                                    else:
+                                        raise ValueError(f"Slot {appointment_datetime} not available for accountant {accountant.id}")
+
+                            appointment = booking_service.create_appointment(
+                                client_id=client.id,
+                                accountant_id=accountant.id,
+                                datetime=appointment_datetime,
+                                duration=60,
+                                notes=f"Booked via Voice AI: {text}"
+                            )
+                            
+                            state["response"] = (
+                                f"✅ Appuntamento confermato!\n\n"
+                                f"📋 ID: {str(appointment.id)[:8]}...\n"
+                                f"📅 Data: {appointment.datetime.strftime('%d/%m/%Y')}\n"
+                                f"🕐 Orario: {appointment.datetime.strftime('%H:%M')}\n"
+                                f"👤 Con: {accountant.name}\n"
+                                f"🏢 Cliente: {client.company_name}\n\n"
+                                f"Riceverai una conferma via email."
+                            )
+                            # If we adjusted the time, mention it
+                            if appointment_datetime != appointment.datetime:
+                                state["response"] += f"\n\nNota: l'orario richiesto non era disponibile. Ho prenotato il prossimo slot disponibile: {appointment.datetime.strftime('%H:%M')}"
+
+                            state["action_taken"] = "appointment_created"
+                            
+                            logger.success(f"✅ REAL appointment created: ID={appointment.id}")
+                
+                except ValueError as ve:
+                    logger.error(f"Validation error in booking: {ve}")
+                    state["response"] = (
+                        f"Mi dispiace, non posso creare l'appuntamento:\n{str(ve)}\n\n"
+                        f"Per favore, riprova con data e ora valide."
+                    )
+                    state["error"] = str(ve)
+                
+                except Exception as e:
+                    logger.error(f"Booking failed: {e}")
+                    logger.exception("Full traceback:")
+                    state["response"] = (
+                        "Mi dispiace, non sono riuscito a creare l'appuntamento.\n"
+                        "Per favore, contatta direttamente lo studio."
+                    )
+                    state["error"] = str(e)      
+
         elif intent == Intent.ACCOUNTANT_ROUTING:
-            # MOCK: Routing service
+            # ✅ Real ClientService for accountant lookup
+            from services import ClientService
+            from models import Accountant
             
-            accountant_name = state["entities"].get("accountant_name", "")
+            accountant_name = entities.get("accountant_name", "")
             
             if not accountant_name:
-                state["response"] = (
-                    "Con quale commercialista vorresti parlare?\n\n"
-                    "Alcuni dei nostri specialisti:\n"
-                    "- Dott. Marco Rossi (Fiscalità)\n"
-                    "- Dott.ssa Laura Bianchi (Paghe)\n"
-                    "- Dott. Giuseppe Verdi (Societario)"
-                )
-                state["requires_followup"] = True
+                # List available accountants from DB
+                with get_db_session() as db:
+                    accountants = db.query(Accountant).filter(
+                        Accountant.status == "active"
+                    ).limit(3).all()
+                    
+                    accountant_list = "\n".join([
+                        f"- {acc.name} ({acc.specialization})"
+                        for acc in accountants
+                    ])
+                    
+                    state["response"] = (
+                        f"Con quale commercialista vorresti parlare?\n\n"
+                        f"Alcuni dei nostri specialisti:\n{accountant_list}"
+                    )
+                    state["requires_followup"] = True
             else:
-                # Mock: Simulate routing
-                state["response"] = (
-                    f"Il {accountant_name} è attualmente:\n"
-                    f"🟢 Disponibile\n\n"
-                    f"Posso:\n"
-                    f"1. Prenotarti un appuntamento\n"
-                    f"2. Inviargli un messaggio urgente\n\n"
-                    f"Cosa preferisci?"
-                )
-                state["action_taken"] = "accountant_located"
+                # Search for accountant in DB
+                with get_db_session() as db:
+                    accountant = db.query(Accountant).filter(
+                        Accountant.name.ilike(f"%{accountant_name}%")
+                    ).first()
+                    
+                    if accountant:
+                        state["response"] = (
+                            f"📞 {accountant.name}\n\n"
+                            f"Specializzazione: {accountant.specialization}\n"
+                            f"Email: {accountant.email}\n"
+                            f"Telefono: {accountant.phone}\n\n"
+                            f"Vuoi prenotare un appuntamento?"
+                        )
+                        state["action_taken"] = "accountant_located"
+                    else:
+                        state["response"] = (
+                            f"Non ho trovato '{accountant_name}' nel nostro database.\n"
+                            f"Vuoi che ti mostri l'elenco completo dei commercialisti?"
+                        )
+                        state["requires_followup"] = True
             
-            logger.info("Routing request processed (mock)")
+            logger.info("Routing request processed with real DB lookup")
         
         elif intent == Intent.OFFICE_INFO:
-            # MOCK: Office info service
+            # ✅ Real OfficeInfoService
+            from services import OfficeInfoService
             
-            # Detect what info they want
             text_lower = text.lower()
             
-            if "orari" in text_lower or "aperto" in text_lower or "chiuso" in text_lower:
-                state["response"] = (
-                    "📅 Orari Studio:\n\n"
-                    "Lunedì - Venerdì: 9:00 - 18:00\n"
-                    "Sabato: 9:00 - 13:00\n"
-                    "Domenica: Chiuso\n\n"
-                    "⚠️ Durante agosto siamo chiusi dal 5 al 25."
-                )
-            elif "indirizzo" in text_lower or "dove" in text_lower:
-                state["response"] = (
-                    "📍 Sede:\n"
-                    "Via Roma 123\n"
-                    "20121 Milano (MI)\n\n"
-                    "🚇 Metro: Duomo (M1/M3)\n"
-                    "🚗 Parcheggio: Via Torino 45"
-                )
-            elif "contatto" in text_lower or "telefono" in text_lower or "email" in text_lower:
-                state["response"] = (
-                    "📞 Contatti:\n\n"
-                    "Telefono: +39 02 1234567\n"
-                    "Email: info@studiocommercialista.it\n"
-                    "PEC: studio@pec.commercialista.it\n\n"
-                    "Orario segreteria: 9:00 - 18:00"
-                )
-            else:
-                # General info
-                state["response"] = (
-                    "ℹ️ Informazioni Studio:\n\n"
-                    "📍 Via Roma 123, Milano\n"
-                    "📞 +39 02 1234567\n"
-                    "📧 info@studiocommercialista.it\n\n"
-                    "Orari: Lun-Ven 9-18, Sab 9-13\n\n"
-                    "Cosa vorresti sapere nello specifico?"
-                )
+            with get_db_session() as db:
+                info_service = OfficeInfoService(db)
+                
+                # More robust matching for office hours (handle 'chiudete', 'chiude', 'aperto')
+                if "orari" in text_lower or "apert" in text_lower or "chiud" in text_lower:
+                    # Get office hours from DB
+                    hours = info_service.get_office_hours()
+                    state["response"] = f"📅 Orari Studio:\n\n{hours}"
+                
+                elif "indirizzo" in text_lower or "dove" in text_lower:
+                    # Get address from DB
+                    address = info_service.get_address()
+                    if address:
+                        state["response"] = f"📍 Sede:\n{address}"
+                    else:
+                        state["response"] = "Indirizzo non disponibile al momento."
+                
+                elif "contatto" in text_lower or "telefono" in text_lower or "email" in text_lower:
+                    # Get contact info from DB
+                    contacts = info_service.get_contact_info()
+                    contact_str = "\n".join([f"{k}: {v}" for k, v in contacts.items()])
+                    state["response"] = f"📞 Contatti:\n\n{contact_str}"
+                
+                else:
+                    # General info
+                    address = info_service.get_address()
+                    contacts = info_service.get_contact_info()
+                    phone = contacts.get("office_phone", "N/A")
+                    email = contacts.get("office_email", "N/A")
+                    
+                    state["response"] = (
+                        f"ℹ️ Informazioni Studio:\n\n"
+                        f"📍 {address}\n"
+                        f"📞 {phone}\n"
+                        f"📧 {email}\n\n"
+                        f"Cosa vorresti sapere nello specifico?"
+                    )
             
             state["action_taken"] = "office_info_provided"
-            logger.info("Office info provided (mock)")
+            logger.info("Office info provided from DB")
         
         elif intent == Intent.LEAD_CAPTURE:
-            # MOCK: Lead capture service
-            
+            # Mock for now (Version A will have real CRM integration)
             state["response"] = (
                 "Benvenuto! Siamo lieti di conoscerti.\n\n"
                 "Per offrirti la migliore consulenza, ho bisogno di qualche informazione:\n\n"
@@ -374,6 +540,7 @@ def execute_action_node(state: ConversationState) -> ConversationState:
     
     except Exception as e:
         logger.error(f"Action execution failed: {e}")
+        logger.exception("Full traceback:")
         state["response"] = (
             "Mi dispiace, si è verificato un errore.\n"
             "Riprova o chiama direttamente lo studio al +39 02 1234567."
@@ -396,6 +563,9 @@ def generate_response_node(state: ConversationState) -> ConversationState:
     response = state.get("response", "")
     intent = state.get("intent", Intent.UNKNOWN)
     
+    if "action_taken" not in state:
+        state["action_taken"] = None
+
     # Add disclaimer for tax queries
     if intent == Intent.TAX_QUERY and response:
         if "⚠️" not in response:  # Don't duplicate
