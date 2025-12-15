@@ -64,40 +64,52 @@ class ConversationState(TypedDict, total=False):
 
 def welcome_node(state: ConversationState) -> ConversationState:
     """
-    Entry node: Initialize conversation state.
+    Entry node: Initialize conversation state and generate greeting if needed.
     
-    Responsibilities:
-    - Set defaults
-    - Log conversation start
-    - Prepare for intent classification
+    CRITICAL: This node now detects first-time calls and generates a proper greeting.
     """
     logger.info("=== WELCOME NODE ===")
+    state["current_node"] = "welcome"
     
-    # Initialize missing fields
-    if "entities" not in state:
-        state["entities"] = {}
+    user_input = state.get("user_input", state.get("transcript", ""))
+    logger.info(f"User input: '{user_input[:50] if user_input else '(empty)'}...'")
     
+    # Initialize conversation history
     if "conversation_history" not in state:
         state["conversation_history"] = []
     
-    if "confidence" not in state:
-        state["confidence"] = 0.0
+    # Initialize entities
+    if "entities" not in state:
+        state["entities"] = {}
     
-    if "requires_followup" not in state:
-        state["requires_followup"] = False
-    
-    state["current_node"] = "welcome"
-    
-    # Log input
-    input_text = state.get("transcript") or state.get("user_input", "")
-    logger.info(f"User input: '{input_text[:100]}...'")
-    
-    # Add to history
-    state["conversation_history"].append({
-        "role": "user",
-        "content": input_text,
-        "timestamp": datetime.now().isoformat()
-    })
+    # ✅ NEW: Detect first call (empty or very short input)
+    if not user_input or len(user_input.strip()) < 3:
+        logger.info("🎤 Detected first call - generating greeting")
+        
+        # Generate greeting
+        greeting = (
+            "Buongiorno! Benvenuto allo Studio Commercialista. "
+            "Sono l'assistente virtuale e posso aiutarti con domande fiscali, "
+            "prenotare appuntamenti o metterti in contatto con un commercialista. "
+            "Come posso aiutarti oggi?"
+        )
+        
+        # Set response directly (skip classification)
+        state["response"] = greeting
+        state["intent"] = Intent.UNKNOWN  # Mark as greeting, not a real query
+        state["confidence"] = 1.0
+        state["action_taken"] = "greeting_generated"
+        
+        # Add to conversation history
+        state["conversation_history"].append({
+            "role": "assistant",
+            "content": greeting,
+            "timestamp": datetime.now().isoformat(),
+            "intent": "greeting",
+            "action": "greeting_generated"
+        })
+        
+        logger.success(f"✅ Greeting generated: {len(greeting)} chars")
     
     return state
 
@@ -106,11 +118,26 @@ def classify_intent_node(state: ConversationState) -> ConversationState:
     """
     Classify user intent using LLM.
     
-    CRITICAL: This determines which service will handle the request.
-    Accuracy here is essential for correct routing.
+    UPDATED: Skip classification if greeting already generated.
     """
     logger.info("=== CLASSIFY INTENT NODE ===")
     state["current_node"] = "classify_intent"
+    
+    # ✅ NEW: Skip if greeting already generated
+    if state.get("action_taken") == "greeting_generated":
+        logger.info("⏭️ Skipping classification - greeting already generated")
+        return state
+    
+    # Get user input
+    user_input = state.get("user_input", state.get("transcript", ""))
+    
+    # Validate input length
+    if not user_input or len(user_input.strip()) < 3:
+        logger.warning("Input too short for classification")
+        state["intent"] = Intent.UNKNOWN
+        state["confidence"] = 0.0
+        state["entities"] = {}
+        return state
     
     # Get input text (transcript if voice, else user_input)
     text = state.get("transcript") or state.get("user_input", "")
@@ -226,7 +253,16 @@ def execute_action_node(state: ConversationState) -> ConversationState:
     text = state.get("transcript") or state.get("user_input", "")
     entities = state.get("entities", {})
     
-    logger.info(f"Executing action for intent: {intent.value}")
+    logger.info("=== EXECUTE ACTION NODE ===")
+    state["current_node"] = "execute_action"
+    
+    # ✅ NEW: Skip if greeting already generated
+    if state.get("action_taken") == "greeting_generated":
+        logger.info("⏭️ Skipping action execution - greeting already generated")
+        return state
+    
+    intent = state.get("intent", Intent.UNKNOWN)
+    logger.info(f"Executing action for intent: {intent.value if intent else 'none'}")
     
     # Get database session
     from database import get_db_session
@@ -697,7 +733,7 @@ class Orchestrator:
             initial_state["transcript"] = transcript
         elif audio_path:
             initial_state["audio_path"] = audio_path
-        elif user_input:
+        elif user_input is not None:
             initial_state["user_input"] = user_input
         else:
             raise ValueError("Must provide user_input, audio_path, or transcript")
