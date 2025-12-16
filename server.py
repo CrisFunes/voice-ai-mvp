@@ -61,7 +61,7 @@ call_sessions = defaultdict(lambda: {
 
 VOICE_CONFIG = {
     "language": "it-IT",
-    "voice": "alice",  # Twilio's Italian voice
+    "voice": "Google.it-IT-Standard-A",  # Twilio's Italian voice
     "speech_timeout": "auto",  # Auto-detect when user stops speaking
     "max_speech_time": 30,  # Max 30 seconds per utterance
     "hints": "IVA, IRES, appuntamento, commercialista, scadenza, dichiarazione"
@@ -71,62 +71,55 @@ VOICE_CONFIG = {
 # WEBHOOK ENDPOINTS
 # ============================================================================
 
-@app.route("/voice/incoming", methods=['GET', 'POST'])
+@app.route("/voice/incoming", methods=["GET", "POST"])
 def incoming_call():
     """
-    Twilio calls this endpoint when a call is received.
-    
-    This is the entry point of the conversation.
+    Maneja llamadas entrantes.
+    Solo envía saludo inicial - NO procesa input todavía.
     """
-    call_sid = request.values.get('CallSid')
-    from_number = request.values.get('From')
-    to_number = request.values.get('To')
+    call_sid = request.values.get("CallSid", "unknown")
+    from_number = request.values.get("From", "unknown")
+    to_number = request.values.get("To", "unknown")
     
     logger.info("=" * 70)
     logger.info(f"📞 INCOMING CALL: {call_sid}")
     logger.info(f"From: {from_number} → To: {to_number}")
     logger.info("=" * 70)
     
-    # Initialize session
-    call_sessions[call_sid]["start_time"] = datetime.now()
-    
-    # Generate greeting using orchestrator
-    try:
-        # Orchestrator maintains state internally
-        result = orchestrator.process(user_input="")  # Empty input = greeting
-        
-        greeting_text = result.get("response", "Benvenuto allo Studio Commercialista.")
-        
-        logger.success(f"✅ Greeting generated: {len(greeting_text)} chars")
-        
-    except Exception as e:
-        logger.error(f"❌ Orchestrator error: {e}")
-        greeting_text = "Benvenuto allo Studio Commercialista. Si è verificato un problema temporaneo."
-    
-    # Build TwiML response
+    # ✅ CORRECTO: Solo enviamos saludo, NO llamamos orchestrator
     response = VoiceResponse()
     
-    # Say greeting
-    response.say(greeting_text, **{k: v for k, v in VOICE_CONFIG.items() if k in ['language', 'voice']})
+    # Saludo inicial
+    response.say(
+        "Buongiorno, sono l'assistente virtuale dello studio. Come posso aiutarti?",
+        language="it-IT",
+        voice="Google.it-IT-Standard-A"
+    )
     
-    # Gather user input
+    # Gather con configuración optimizada
     gather = Gather(
-        input='speech',
-        language=VOICE_CONFIG['language'],
-        speech_timeout=VOICE_CONFIG['speech_timeout'],
-        max_speech_time=VOICE_CONFIG['max_speech_time'],
-        hints=VOICE_CONFIG['hints'],
-        action='/voice/gather',
-        method='POST'
+        input="speech",
+        language="it-IT",
+        action="/voice/gather",
+        speech_timeout="auto",
+        speech_model="phone_call",
+        # ✅ ESTO MEJORA LA CALIDAD
+        hints="IVA, IRES, appuntamento, commercialista",
+        bargeIn=True,  # Permite interrumpir
+        enhanced=True  # Usa modelo ASR mejorado
     )
     
     response.append(gather)
     
-    # If no input, redirect to gather
-    response.redirect('/voice/gather')
+    # Fallback si no hay input
+    response.say(
+        "Non ho sentito nulla. Puoi richiamare quando vuoi. Arrivederci.",
+        language="it-IT",
+        voice="Google.it-IT-Standard-A"
+    )
+    response.hangup()
     
-    logger.info(f"📤 Sending TwiML response")
-    
+    logger.info("📤 Sending TwiML response")
     return str(response)
 
 
