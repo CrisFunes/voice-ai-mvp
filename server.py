@@ -59,9 +59,23 @@ call_sessions = defaultdict(lambda: {
 # CONFIGURATION
 # ============================================================================
 
+# OPCIONES DE VOZ ITALIANA (ordenadas por calidad):
+# 
+# WAVENET (RECOMENDADO - Mejor calidad, acento nativo):
+#   - Google.it-IT-Wavenet-A (femenina, natural)
+#   - Google.it-IT-Wavenet-B (femenina, cálida)
+#   - Google.it-IT-Wavenet-C (masculina, profesional)
+#   - Google.it-IT-Wavenet-D (masculina, amigable)
+#
+# STANDARD (Más económico, calidad básica):
+#   - Google.it-IT-Standard-A/B/C/D
+#
+# NOTA: Wavenet tiene ~20% más costo pero significativamente mejor acento
+
 VOICE_CONFIG = {
     "language": "it-IT",
-    "voice": "Google.it-IT-Standard-A",  # Twilio's Italian voice
+    "voice": "Google.it-IT-Wavenet-C",  # Masculina profesional (MEJOR CALIDAD)
+    # Alternativas: "Google.it-IT-Wavenet-A" (femenina), "Google.it-IT-Wavenet-D" (masculina amigable)
     "speech_timeout": "auto",  # Auto-detect when user stops speaking
     "max_speech_time": 30,  # Max 30 seconds per utterance
     "hints": "IVA, IRES, appuntamento, commercialista, scadenza, dichiarazione"
@@ -92,8 +106,7 @@ def incoming_call():
     # Saludo inicial
     response.say(
         "Buongiorno, sono l'assistente virtuale dello studio. Come posso aiutarti?",
-        language="it-IT",
-        voice="Google.it-IT-Standard-A"
+        **{k: v for k, v in VOICE_CONFIG.items() if k in ['language', 'voice']}
     )
     
     # Gather con configuración optimizada
@@ -114,8 +127,7 @@ def incoming_call():
     # Fallback si no hay input
     response.say(
         "Non ho sentito nulla. Puoi richiamare quando vuoi. Arrivederci.",
-        language="it-IT",
-        voice="Google.it-IT-Standard-A"
+        **{k: v for k, v in VOICE_CONFIG.items() if k in ['language', 'voice']}
     )
     response.hangup()
     
