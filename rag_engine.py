@@ -16,6 +16,42 @@ import sys
 import config
 import prompts
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+# ============================================================================
+# SINGLETON PATTERN 
+# ============================================================================
+_rag_engine_instance = None
+_rag_engine_lock = None
+
+def get_rag_engine():
+    """
+    Get singleton RAG Engine instance.
+    Thread-safe lazy initialization.
+    
+    Returns:
+        RAGEngine: Singleton instance (initialized only once)
+    
+    Example:
+        rag = get_rag_engine()  # First call: initializes
+        rag2 = get_rag_engine()  # Subsequent calls: returns same instance
+    """
+    global _rag_engine_instance, _rag_engine_lock
+    
+    if _rag_engine_instance is None:
+        # Thread-safe initialization
+        if _rag_engine_lock is None:
+            import threading
+            _rag_engine_lock = threading.Lock()
+        
+        with _rag_engine_lock:
+            # Double-check pattern
+            if _rag_engine_instance is None:
+                logger.info("🔧 Creating singleton RAG Engine instance (one-time init)...")
+                _rag_engine_instance = RAGEngine()
+                logger.success("✅ Singleton RAG Engine ready for reuse")
+    
+    return _rag_engine_instance
+
 # ============================================================================
 # LOGGING SETUP
 # ============================================================================
