@@ -87,7 +87,7 @@ ASR_MODEL = "whisper-1"
 ASR_LANGUAGE = "it"  # Italian
 
 # TTS (Text-to-Speech)
-TTS_MODEL = "tts-1"  # Can upgrade to tts-1-hd for production
+TTS_MODEL = "tts-1-hd"  # Can upgrade to tts-1-hd for production
 TTS_VOICE = "alloy"  # Options: alloy, echo, fable, onyx, nova, shimmer
 TTS_SPEED = 1.0
 
