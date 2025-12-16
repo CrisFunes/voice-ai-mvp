@@ -8,6 +8,7 @@ from datetime import datetime
 from langgraph.graph import StateGraph, END
 from loguru import logger
 import json
+from rag_engine import RAGEngine, get_rag_engine
 
 # ============================================================================
 # ENUMS & TYPES
@@ -183,7 +184,7 @@ Rispondi SOLO con un JSON:
 }}"""
         
         # Call LLM (reuse RAGEngine's LLM client)
-        rag = RAGEngine()
+        rag = get_rag_engine()
         response = rag._call_llm(prompt)
         
         # Parse JSON response
@@ -272,7 +273,7 @@ def execute_action_node(state: ConversationState) -> ConversationState:
             # ✅ Real RAG engine
             from rag_engine import RAGEngine
             
-            rag = RAGEngine()
+            rag = get_rag_engine()
             result = rag.get_answer(text)
             
             state["response"] = result["answer"]
@@ -703,13 +704,19 @@ class Orchestrator:
         workflow = create_conversation_graph()
         self.app = workflow.compile()
         
+        # Pre-warm RAG Engine (load once at startup)
+        logger.info("Pre-warming RAG Engine...")
+        self.rag = get_rag_engine()  # ✅ Carga anticipada
+        logger.success("RAG Engine pre-warmed and ready")
+        
         logger.success("Orchestrator ready")
     
     def process(
         self, 
         user_input: str = None,
         audio_path: str = None,
-        transcript: str = None
+        transcript: str = None,
+        context: dict = None
     ) -> ConversationState:
         """
         Process a user input through the conversation graph.
@@ -718,25 +725,32 @@ class Orchestrator:
             user_input: Text input (for text mode)
             audio_path: Path to audio file (for voice mode)
             transcript: Pre-transcribed text (if ASR done externally)
+            context: Previous conversation context (for multi-turn)
         
         Returns:
-            Final conversation state with response
+            Final conversation state with response AND context for next turn
         """
         logger.info("="*70)
         logger.info("PROCESSING NEW CONVERSATION TURN")
         logger.info("="*70)
         
-        # Build initial state
-        initial_state: ConversationState = {}
+        # Build initial state (preserve context if provided)
+        initial_state: ConversationState = context.copy() if context else {}
         
         if transcript:
             initial_state["transcript"] = transcript
         elif audio_path:
             initial_state["audio_path"] = audio_path
-        elif user_input is not None:
+        elif user_input:
             initial_state["user_input"] = user_input
         else:
             raise ValueError("Must provide user_input, audio_path, or transcript")
+        
+        # Initialize context fields if not present
+        if "conversation_history" not in initial_state:
+            initial_state["conversation_history"] = []
+        if "entities" not in initial_state:
+            initial_state["entities"] = {}
         
         # Run through graph
         try:
@@ -749,20 +763,31 @@ class Orchestrator:
             logger.info(f"Response length: {len(final_state.get('response', ''))} chars")
             logger.info("="*70)
             
+            # ✅ ADD CONTEXT TO RESULT FOR MULTI-TURN CONVERSATIONS
+            # Preserve state for next turn
+            final_state["context"] = {
+                "conversation_history": final_state.get("conversation_history", []),
+                "entities": final_state.get("entities", {}),
+                "client_id": final_state.get("client_id"),
+                "accountant_id": final_state.get("accountant_id"),
+                "intent": final_state.get("intent"),
+                "confidence": final_state.get("confidence", 0.0)
+            }
+            
             return final_state
         
         except Exception as e:
             logger.error(f"Orchestrator processing failed: {e}")
             
-            # Return error state
+            # Return error state WITH CONTEXT
             return {
                 "user_input": user_input or "",
                 "response": "Errore interno. Riprova o contatta lo studio.",
                 "error": str(e),
                 "intent": Intent.UNKNOWN,
-                "current_node": "error"
+                "current_node": "error",
+                "context": {}  # ✅ Empty context on error
             }
-
 
 # ============================================================================
 # TESTING
