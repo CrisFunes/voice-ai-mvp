@@ -270,17 +270,26 @@ def execute_action_node(state: ConversationState) -> ConversationState:
     
     try:
         if intent == Intent.TAX_QUERY:
-            # ✅ Real RAG engine
-            from rag_engine import RAGEngine
+            state["response"] = (
+                "Mi dispiace, non posso rispondere a domande fiscali. "
+                "Le consiglio di parlare direttamente con il commercialista."
+            )
+            state["action_taken"] = "tax_query_rejected"
+            return state
+
+        # if intent == Intent.TAX_QUERY:
+        #     # ✅ Real RAG engine
+        #     from rag_engine import RAGEngine
             
-            rag = get_rag_engine()
-            result = rag.get_answer(text)
+        #     rag = get_rag_engine()
+        #     result = rag.get_answer(text)
             
-            state["response"] = result["answer"]
-            state["action_taken"] = "tax_query_answered"
-            state["entities"]["sources"] = result.get("sources", [])
+        #     state["response"] = result["answer"]
+        #     state["action_taken"] = "tax_query_answered"
+        #     state["entities"]["sources"] = result.get("sources", [])
             
-            logger.success("Tax query answered via RAG")
+        #     logger.success("Tax query answered via RAG")
+        
         
         elif intent == Intent.APPOINTMENT_BOOKING:
             # ✅ Real BookingService with DB writes
@@ -741,7 +750,8 @@ class Orchestrator:
             initial_state["transcript"] = transcript
         elif audio_path:
             initial_state["audio_path"] = audio_path
-        elif user_input:
+        # NOTE: Empty string is a valid input for "first call" greeting.
+        elif user_input is not None:
             initial_state["user_input"] = user_input
         else:
             raise ValueError("Must provide user_input, audio_path, or transcript")

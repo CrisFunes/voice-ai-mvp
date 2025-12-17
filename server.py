@@ -2,7 +2,7 @@
 Twilio Voice Server - Voice AI Agent MVP
 Integrates existing orchestrator, RAG engine, and database
 """
-from flask import Flask, request, session
+from flask import Flask, request, session, Response
 from twilio.twiml.voice_response import VoiceResponse, Gather, Say
 from twilio.rest import Client
 from loguru import logger
@@ -61,7 +61,8 @@ call_sessions = defaultdict(lambda: {
 
 VOICE_CONFIG = {
     "language": "it-IT",
-    "voice": "alice",  # Twilio's Italian voice
+    # Twilio <Say> supports "alice" (multilingual). Google Wavenet voices are NOT supported by Twilio.
+    "voice": "alice",
     "speech_timeout": "auto",  # Auto-detect when user stops speaking
     "max_speech_time": 30,  # Max 30 seconds per utterance
     "hints": "IVA, IRES, appuntamento, commercialista, scadenza, dichiarazione"
@@ -117,7 +118,9 @@ def incoming_call():
         max_speech_time=VOICE_CONFIG['max_speech_time'],
         hints=VOICE_CONFIG['hints'],
         action='/voice/gather',
-        method='POST'
+        method='POST',
+        speech_model="phone_call",
+        enhanced=True
     )
     
     response.append(gather)
@@ -127,7 +130,7 @@ def incoming_call():
     
     logger.info(f"📤 Sending TwiML response")
     
-    return str(response)
+    return Response(str(response), mimetype="text/xml")
 
 
 @app.route("/voice/gather", methods=['POST'])
@@ -168,10 +171,12 @@ def gather_speech():
             max_speech_time=VOICE_CONFIG['max_speech_time'],
             hints=VOICE_CONFIG['hints'],
             action='/voice/gather',
-            method='POST'
+            method='POST',
+            speech_model="phone_call",
+            enhanced=True
         )
         response.append(gather)
-        return str(response)
+        return Response(str(response), mimetype="text/xml")
     
     # Check for farewell
     farewell_keywords = ['grazie', 'ciao', 'arrivederci', 'saluti', 'buonasera', 'buonanotte', 'va bene']
@@ -199,7 +204,7 @@ def gather_speech():
         # Clean up session
         del call_sessions[call_sid]
         
-        return str(response)
+        return Response(str(response), mimetype="text/xml")
     
     # Process with orchestrator
     try:
@@ -239,7 +244,9 @@ def gather_speech():
         max_speech_time=VOICE_CONFIG['max_speech_time'],
         hints=VOICE_CONFIG['hints'],
         action='/voice/gather',
-        method='POST'
+        method='POST',
+        speech_model="phone_call",
+        enhanced=True
     )
     response.append(gather)
     
@@ -248,7 +255,7 @@ def gather_speech():
     
     logger.info("📤 Sending TwiML response with gather")
     
-    return str(response)
+    return Response(str(response), mimetype="text/xml")
 
 
 @app.route("/voice/status", methods=['POST'])
