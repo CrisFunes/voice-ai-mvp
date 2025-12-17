@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from collections import defaultdict
 import json
+import re
 
 # Import your existing code
 from orchestrator import Orchestrator
@@ -58,6 +59,8 @@ logger.success("Orchestrator ready")
 call_sessions = defaultdict(lambda: {
     "turn_count": 0,
     "start_time": None,
+    # Persist orchestrator context per call to keep a coherent multi-turn thread
+    "context": {},
     "call_metadata": {
         "intents": [],
         "actions": []
@@ -73,7 +76,14 @@ VOICE_CONFIG = {
     "voice": "Google.it-IT-Wavenet-C",  # Twilio's Italian voice
     "speech_timeout": "auto",  # Auto-detect when user stops speaking
     "max_speech_time": 30,  # Max 30 seconds per utterance
-    "hints": "IVA, IRES, appuntamento, commercialista, scadenza, dichiarazione"
+    # Hints help STT on short replies (e.g., times like "13" / "tredici").
+    "hints": (
+        "appuntamento, prenotare, disponibilità, orario, giorno, domani, oggi, dopodomani, "
+        "9, 10, 11, 12, 13, 14, 15, 16, 17, 18, "
+        "nove, dieci, undici, dodici, tredici, quattordici, quindici, sedici, diciassette, diciotto, "
+        "alle 9, alle 10, alle 11, alle 12, alle 13, alle 14, alle 15, alle 16, alle 17, "
+        "tredici e trenta, tredici e un quarto"
+    )
 }
 
 # ============================================================================
@@ -99,13 +109,17 @@ def incoming_call():
     session_data = call_sessions[call_sid]
     if session_data.get("start_time") is None:
         session_data["start_time"] = datetime.now()
+
+    # Store caller phone for later turns (orchestrator can use it for client lookup)
+    session_data.setdefault("context", {})
+    session_data["context"].setdefault("client_phone", from_number)
     
     # ✅ CORRECTO: Solo enviamos saludo, NO llamamos orchestrator
     response = VoiceResponse()
     
     # Saluto iniziale (breve, naturale, senza riferimenti a "AI")
     response.say(
-        "Buongiorno, Studio Commercialista. Come posso aiutarLa?",
+        "Buongiorno, Studio Commercialista. In cosa posso esserLe utile?",
         language="it-IT",
         voice="Google.it-IT-Wavenet-C"
     )
@@ -117,8 +131,8 @@ def incoming_call():
         action="/voice/gather",
         speech_timeout="auto",
         speech_model="phone_call",
-        # ✅ ESTO MEJORA LA CALIDAD
-        hints="IVA, IRES, appuntamento, commercialista",
+        # Hints tuned for scheduling + short numeric replies
+        hints=VOICE_CONFIG["hints"],
         bargeIn=True,  # Permite interrumpir
         enhanced=True  # Usa modelo ASR mejorado
     )
@@ -151,8 +165,14 @@ def gather_speech():
     This processes the user's input and generates a response.
     """
     call_sid = request.values.get('CallSid')
+    from_number = request.values.get('From', 'unknown')
     transcript = request.values.get('SpeechResult', '').strip()
     confidence = request.values.get('Confidence', '0.0')
+
+    try:
+        confidence_val = float(confidence)
+    except Exception:
+        confidence_val = 0.0
     
     logger.info("=" * 70)
     logger.info(f"🎤 USER INPUT: {call_sid}")
@@ -167,9 +187,76 @@ def gather_speech():
     session_data["turn_count"] += 1
     
     response = VoiceResponse()
+
+    # If we are in a slot-filling follow-up (e.g., asking for time) and STT confidence is low,
+    # avoid sending a likely-wrong transcript into the orchestrator (which then re-asks and feels like a loop).
+    prior_context = session_data.get("context") or {}
+    expected_slot = (prior_context.get("entities") or {}).get("expected_slot")
+    transcript_lower = transcript.lower()
+    if expected_slot in {"time", "date", "date_time"} and confidence_val > 0.0 and confidence_val < 0.55:
+        has_digits = bool(re.search(r"\d", transcript))
+        has_date_word = any(w in transcript_lower for w in ("oggi", "domani", "dopodomani"))
+        if not has_digits and not has_date_word:
+            logger.warning(
+                f"⚠️ Low-confidence follow-up for slot={expected_slot}: '{transcript}' ({confidence_val:.3f})"
+            )
+            response.say(
+                "Mi scusi, non ho capito bene. Mi può dire giorno e orario in modo semplice, per esempio 'domani alle 13' o 'giovedì alle 15'?",
+                **{k: v for k, v in VOICE_CONFIG.items() if k in ['language', 'voice']}
+            )
+            gather = Gather(
+                input='speech',
+                language=VOICE_CONFIG['language'],
+                speech_timeout=VOICE_CONFIG['speech_timeout'],
+                max_speech_time=VOICE_CONFIG['max_speech_time'],
+                hints=VOICE_CONFIG['hints'],
+                speech_model="phone_call",
+                bargeIn=True,
+                enhanced=True,
+                action='/voice/gather',
+                method='POST'
+            )
+            response.append(gather)
+            return Response(str(response), mimetype="text/xml")
+
+    # Guard: sometimes STT returns only filler like "alle" with high confidence.
+    # Treat it as non-informative when we are explicitly expecting a time/date.
+    if expected_slot in {"time", "date", "date_time"}:
+        filler_only = {
+            "alle", "a", "allora", "eh", "e", "ok", "okay", "si", "sì",
+        }
+        if transcript_lower.strip() in filler_only:
+            logger.warning(
+                f"⚠️ Non-informative follow-up for slot={expected_slot}: '{transcript}' ({confidence_val:.3f})"
+            )
+            if expected_slot == "time":
+                prompt = "Mi scusi, ho sentito solo 'alle'. Mi può dire un orario, per esempio 'alle 13' o 'alle 15 e 30'?"
+            elif expected_slot == "date":
+                prompt = "Mi scusi, non ho colto il giorno. Mi può dire 'oggi', 'domani' oppure un giorno della settimana?"
+            else:
+                prompt = "Mi scusi, non ho colto giorno e orario. Per esempio: 'domani alle 13'."
+
+            response.say(
+                prompt,
+                **{k: v for k, v in VOICE_CONFIG.items() if k in ['language', 'voice']}
+            )
+            gather = Gather(
+                input='speech',
+                language=VOICE_CONFIG['language'],
+                speech_timeout=VOICE_CONFIG['speech_timeout'],
+                max_speech_time=VOICE_CONFIG['max_speech_time'],
+                hints=VOICE_CONFIG['hints'],
+                speech_model="phone_call",
+                bargeIn=True,
+                enhanced=True,
+                action='/voice/gather',
+                method='POST'
+            )
+            response.append(gather)
+            return Response(str(response), mimetype="text/xml")
     
-    # Handle empty input
-    if not transcript or len(transcript) < 3:
+    # Handle empty input (but allow short valid answers like "13")
+    if not transcript or not re.search(r"[A-Za-zÀ-ÿ0-9]", transcript):
         logger.warning("⚠️ Empty or very short input")
         response.say(
             "Non ho sentito nulla. Può ripetere, per favore?",
@@ -183,6 +270,9 @@ def gather_speech():
             speech_timeout=VOICE_CONFIG['speech_timeout'],
             max_speech_time=VOICE_CONFIG['max_speech_time'],
             hints=VOICE_CONFIG['hints'],
+            speech_model="phone_call",
+            bargeIn=True,
+            enhanced=True,
             action='/voice/gather',
             method='POST'
         )
@@ -226,9 +316,17 @@ def gather_speech():
     # Process with orchestrator
     try:
         logger.info("⚙️ Processing with orchestrator...")
-        
-        # Orchestrator maintains conversation history internally
-        result = orchestrator.process(user_input=transcript)
+
+        # ✅ Multi-turn continuity: pass back context from previous turn
+        # This avoids "resetting" the conversation and re-listing capabilities.
+        prior_context = session_data.get("context") or {}
+        # Ensure caller phone is present for any caller identification logic
+        prior_context.setdefault("client_phone", request.values.get("From") or request.values.get("Caller") or from_number)
+
+        result = orchestrator.process(user_input=transcript, context=prior_context)
+
+        # Persist context for next turn
+        session_data["context"] = result.get("context") or prior_context
         
         # Get response
         intent = result.get("intent", "unknown")
@@ -260,6 +358,9 @@ def gather_speech():
         speech_timeout=VOICE_CONFIG['speech_timeout'],
         max_speech_time=VOICE_CONFIG['max_speech_time'],
         hints=VOICE_CONFIG['hints'],
+        speech_model="phone_call",
+        bargeIn=True,
+        enhanced=True,
         action='/voice/gather',
         method='POST'
     )

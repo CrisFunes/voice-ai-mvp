@@ -11,6 +11,65 @@ from models import Appointment, Client, Accountant
 
 class TestMultiTurnBookingFlow:
     """Test booking requires multiple turns to collect info"""
+
+    def test_booking_next_week_with_rossi_timeframe(self):
+        """Flow: user asks appointment with Dottor Rossi for next week (needs follow-up)."""
+        orchestrator = Orchestrator()
+        context = {}
+
+        result = orchestrator.process(
+            user_input=(
+                "Pronto, vorrei prendere appuntamento con il Dottor Rossi per la settimana prossima."
+            ),
+            context=context,
+        )
+
+        assert result["intent"] == Intent.APPOINTMENT_BOOKING
+        assert result.get("requires_followup") is True
+
+        entities = result.get("entities", {}) or {}
+        # We should capture the accountant last name from the utterance.
+        assert "rossi" in str(entities.get("accountant_name", "")).lower()
+        # Timeframe extraction is optional but expected for this phrase.
+        assert entities.get("timeframe") in {"next_week", None}
+
+        # Response should be about choosing day/time, ideally referencing next week.
+        resp_lower = (result.get("response") or "").lower()
+        assert any(k in resp_lower for k in ["giorno", "orario", "a che ora", "prossima settimana", "quando"])
+
+    def test_booking_requests_name_only_when_registering(self):
+        """Name should be requested only when needed to register an appointment, not upfront."""
+        orchestrator = Orchestrator()
+        context = {}
+
+        # Turn 1: Provide a complete day/time; system may need a name to register.
+        result1 = orchestrator.process(
+            user_input="Vorrei un appuntamento domani alle 10",
+            context=context,
+        )
+
+        assert result1["intent"] == Intent.APPOINTMENT_BOOKING
+        assert result1.get("requires_followup") is True
+        assert result1.get("action_taken") == "request_client_name"
+        assert (result1.get("entities", {}) or {}).get("expected_slot") == "name"
+        assert "nome" in (result1.get("response") or "").lower()
+
+        # Turn 2: Provide the name; system should capture it and continue booking
+        context.update(result1.get("context", {}))
+        result2 = orchestrator.process(
+            user_input="Mario Rossi",
+            context=context,
+        )
+
+        assert result2["intent"] == Intent.APPOINTMENT_BOOKING
+
+        entities2 = result2.get("entities", {}) or {}
+        assert entities2.get("client_name") is not None
+
+        # Critical: do NOT ask the name again on the next turn
+        resp2 = (result2.get("response") or "").lower()
+        assert "a nome di chi" not in resp2
+        assert "qual è il suo nome" not in resp2
     
     def test_booking_incremental_collection(self):
         """System should collect date, time, accountant across turns"""

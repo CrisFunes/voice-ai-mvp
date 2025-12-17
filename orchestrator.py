@@ -104,15 +104,17 @@ def welcome_node(state: ConversationState) -> ConversationState:
         except Exception as e:
             logger.warning(f"Caller lookup failed: {e}")
     
-    # ✅ Detect first call (empty or very short input)
-    if not user_input or len(user_input.strip()) < 3:
+    # ✅ Detect first call ONLY when input is truly empty.
+    # For voice calls, the greeting is normally handled in /voice/incoming.
+    # Avoid greeting on short but meaningful answers like "13".
+    if user_input is None or str(user_input).strip() == "":
         logger.info("🎤 Detected first call - generating greeting")
 
         client_name = state.get("entities", {}).get("client_name")
         if client_name:
-            greeting = f"Buongiorno, {client_name}. Come posso aiutarLa?"
+            greeting = f"Buongiorno, {client_name}. In cosa posso esserLe utile?"
         else:
-            greeting = "Buongiorno, Studio Commercialista. Come posso aiutarLa?"
+            greeting = "Buongiorno, Studio Commercialista. In cosa posso esserLe utile?"
         
         # Set response directly (skip classification)
         state["response"] = greeting
@@ -147,12 +149,75 @@ def classify_intent_node(state: ConversationState) -> ConversationState:
     if state.get("action_taken") == "greeting_generated":
         logger.info("⏭️ Skipping classification - greeting already generated")
         return state
+
+    # Get user input text early (we will reuse it for follow-up + slot filling)
+    text = (state.get("transcript") or state.get("user_input") or "")
+    text_lower = text.lower().strip()
+
+    # If we explicitly asked for a name (slot-filling), capture it here.
+    # This avoids accidental "name capture" from phrases like "Appuntamento con Rossi".
+    expected_slot = (state.get("entities") or {}).get("expected_slot")
+    if expected_slot == "name" and text_lower:
+        name = None
+        m = re.search(r"\bmi\s+chiamo\s+(.+)$", text_lower)
+        if m:
+            name = m.group(1).strip()
+        else:
+            m2 = re.search(r"\bsono\s+(.+)$", text_lower)
+            if m2:
+                name = m2.group(1).strip()
+            else:
+                # As a fallback, accept short 1-4 token answers as a name when we asked for it.
+                tokens = [t for t in re.split(r"\s+", text_lower) if t]
+                if 1 <= len(tokens) <= 4:
+                    name = " ".join(tokens)
+
+        if name:
+            name_clean = re.sub(r"[^\w\s'À-ÿ-]", "", name).strip()
+            if name_clean:
+                state.setdefault("entities", {})
+                state["entities"]["client_name"] = name_clean.title()
+                # Keep current intent (e.g., booking) so the flow can continue.
+                state["confidence"] = max(float(state.get("confidence", 0.0)), 0.90)
+                return state
+
+    # ✅ Multi-turn continuity: if we previously asked a follow-up question,
+    # keep the previous intent instead of re-classifying a short slot-filling answer.
+    # BUT: if the user clearly changes topic, allow re-classification.
+    if state.get("requires_followup") and state.get("intent") and state.get("intent") != Intent.UNKNOWN:
+        office_keywords = [
+            "orari", "orario", "dove", "indirizzo", "telefono", "contatt", "email",
+            "chiud", "chiude", "chiudete", "apert", "aperto", "aperti",
+        ]
+        routing_keywords = ["parlare con", "dott.", "dottor", "dottoressa", "commercialista"]
+        booking_keywords = ["appuntamento", "prenotar", "prenota", "fissare", "disponibil"]
+        tax_keywords = [
+            "iva", "ires", "irap", "tasse", "fiscal", "scadenz", "dichiarazione",
+            "deduz", "dedur", "dedurre", "detraz", "detrare",
+            "contribut", "imposta", "aliquota", "codice tributo",
+            "regime forfett", "730", "redditi", "f24", "imu", "tari", "inps",
+        ]
+
+        topic_shift = (
+            any(k in text_lower for k in office_keywords)
+            or any(k in text_lower for k in routing_keywords)
+            or any(k in text_lower for k in booking_keywords)
+            or any(k in text_lower for k in tax_keywords)
+        )
+
+        if not topic_shift:
+            logger.info(
+                f"🔁 Follow-up turn detected; preserving intent={state.get('intent').value}"
+            )
+            # Do not wipe entities here; downstream action nodes can re-parse from text.
+            state["confidence"] = max(float(state.get("confidence", 0.0)), 0.85)
+            return state
     
     # Get user input
     user_input = state.get("user_input", state.get("transcript", ""))
     
-    # Validate input length
-    if not user_input or len(user_input.strip()) < 3:
+    # Validate input presence (allow short but meaningful inputs like "13")
+    if user_input is None or str(user_input).strip() == "":
         logger.warning("Input too short for classification")
         state["intent"] = Intent.UNKNOWN
         state["confidence"] = 0.0
@@ -161,8 +226,8 @@ def classify_intent_node(state: ConversationState) -> ConversationState:
     
     # Get input text (transcript if voice, else user_input)
     text = state.get("transcript") or state.get("user_input", "")
-    
-    if not text or len(text.strip()) < 3:
+
+    if text is None or str(text).strip() == "":
         logger.warning("Input too short for classification")
         state["intent"] = Intent.UNKNOWN
         state["confidence"] = 0.0
@@ -173,6 +238,29 @@ def classify_intent_node(state: ConversationState) -> ConversationState:
     # FAST PATH: Pattern matching (70% of cases, ~100ms vs ~800ms LLM)
     # ============================================================================
     text_lower = text.lower()
+
+    # Heuristic: standalone date/time replies (common in follow-ups)
+    # Example: "13", "alle 13", "13:20", "domani".
+    time_only = re.fullmatch(r"\s*(?:alle\s+)?(\d{1,2})(?::(\d{2}))?\s*", text_lower)
+    if time_only:
+        hour = int(time_only.group(1))
+        minute = int(time_only.group(2) or "00")
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            state["intent"] = Intent.APPOINTMENT_BOOKING
+            state["confidence"] = 0.80
+            state.setdefault("entities", {})
+            state["entities"]["time"] = f"{hour:02d}:{minute:02d}"
+            return state
+
+    if text_lower.strip() in {"oggi", "domani", "dopodomani"}:
+        state["intent"] = Intent.APPOINTMENT_BOOKING
+        state["confidence"] = 0.80
+        state.setdefault("entities", {})
+        state["entities"]["date"] = text_lower.strip()
+        return state
+
+    # NOTE: We intentionally do NOT do proactive name capture here.
+    # The receptionist should ask for the name only when needed to register something.
     
     # Tax query detection (to REJECT, not answer)
     tax_keywords = [
@@ -194,7 +282,27 @@ def classify_intent_node(state: ConversationState) -> ConversationState:
         logger.info("🚀 FAST PATH: Booking intent detected via regex")
         state["intent"] = Intent.APPOINTMENT_BOOKING
         state["confidence"] = 0.95
-        state["entities"] = {}
+        # Keep lightweight entity extraction here to avoid relying on the LLM
+        # for very common booking phrases like "con il Dottor Rossi".
+        entities = {}
+
+        # Extract accountant name (usually last name) from common title patterns
+        # Examples: "Dottor Rossi", "Dott. Rossi", "Dott.ssa Bianchi", "Dottoressa Verdi"
+        m_acc = re.search(
+            r"\b(?:dott\.?ssa|dott\.|dottor|dottoressa)\s+([a-zà-ÿ'\-]+)",
+            text_lower,
+            flags=re.IGNORECASE,
+        )
+        if m_acc:
+            acc = m_acc.group(1).strip()
+            if acc:
+                entities["accountant_name"] = acc.title()
+
+        # Extract timeframe hints (used to tailor follow-up questions)
+        if "settimana prossima" in text_lower or "prossima settimana" in text_lower:
+            entities["timeframe"] = "next_week"
+
+        state["entities"] = entities
         return state
     
     # Office info patterns
@@ -342,21 +450,20 @@ def execute_action_node(state: ConversationState) -> ConversationState:
             import re
             
             # Extract entities - check both entities dict and raw text
-            date_str = entities.get("date", "")
-            time_str = entities.get("time", "")
+            # Also reuse prior booking info across follow-ups.
+            date_str = entities.get("date", "") or entities.get("booking_date", "")
+            time_str = entities.get("time", "") or entities.get("booking_time", "")
             
             # If date not in entities, try to parse from original text
             text_lower = text.lower()
             
             # Detect relative days in text (check longer words first)
-            if not date_str and "dopodomani" in text_lower:
+            # Always allow current turn to override prior stored date.
+            if "dopodomani" in text_lower:
                 date_str = "dopodomani"
-            # Detect "domani" (tomorrow) in text
-            if not date_str and "domani" in text_lower:
+            elif "domani" in text_lower:
                 date_str = "domani"
-            
-            # Detect "oggi" (today)
-            if not date_str and "oggi" in text_lower:
+            elif "oggi" in text_lower:
                 date_str = "oggi"
             
             # Extract time from text if not in entities
@@ -365,22 +472,59 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                 time_str = entities.get("time")
                 explicit_time = True
 
-            if not time_str:
-                # Match patterns like "15:00", "alle 15", "15"
-                time_match = re.search(r'(?:alle\s+)?(\d{1,2}):?(\d{2})?', text_lower)
-                if time_match:
-                    hour = time_match.group(1)
-                    minute = time_match.group(2) or "00"
-                    time_str = f"{hour}:{minute}"
-                    explicit_time = True
+            # Always allow current turn to override prior stored time if a time is present.
+            # Match patterns like "15:00", "alle 15", "15".
+            time_match = re.search(r'(?:alle\s+)?(\d{1,2})(?::(\d{2}))?\b', text_lower)
+            if time_match:
+                hour = time_match.group(1)
+                minute = time_match.group(2) or "00"
+                time_str = f"{hour}:{minute}"
+                explicit_time = True
+
+            # Persist parsed booking pieces for subsequent follow-ups
+            if date_str:
+                entities["booking_date"] = date_str
+            if time_str:
+                entities["booking_time"] = time_str
 
             logger.info(f"Parsed booking request - date: {date_str}, time: {time_str}, explicit_time: {explicit_time}")
             # Parse date/time from entities
             if not date_str or not time_str:
-                state["response"] = (
-                    "Per fissare un appuntamento mi serve il giorno e l'orario. "
-                    "Ad esempio: 'Domani alle 15'."
-                )
+                # Reduce robotic repetition: only acknowledge when we actually understood something new.
+                last_assistant = None
+                if state.get("conversation_history"):
+                    for item in reversed(state["conversation_history"]):
+                        if item.get("role") == "assistant" and item.get("content"):
+                            last_assistant = str(item.get("content"))
+                            break
+
+                # Detect a clearly incomplete time utterance like "alle" / "a"
+                utter = text_lower.strip()
+                incomplete_time = utter in {"alle", "a", "verso"}
+
+                if date_str and not time_str:
+                    entities["expected_slot"] = "time"
+                    if incomplete_time or (last_assistant and "Per che ora" in last_assistant):
+                        state["response"] = (
+                            "Mi scusi, non ho colto l'orario. Mi può dire un orario, per esempio 'alle 13' o 'alle 15 e 30'?"
+                        )
+                    else:
+                        state["response"] = "Va bene. Per che ora preferisce?"
+                elif time_str and not date_str:
+                    entities["expected_slot"] = "date"
+                    if last_assistant and "Per quale giorno" in last_assistant:
+                        state["response"] = (
+                            "Mi scusi, non ho capito il giorno. Mi può dire 'oggi', 'domani' oppure un giorno della settimana?"
+                        )
+                    else:
+                        state["response"] = "Va bene. Per quale giorno?"
+                else:
+                    entities["expected_slot"] = "date_time"
+                    if entities.get("timeframe") == "next_week":
+                        state["response"] = "Va bene. Per quale giorno della prossima settimana e a che ora?"
+                    else:
+                        state["response"] = "Mi scusi, mi indica giorno e orario, per favore?"
+
                 state["requires_followup"] = True
                 logger.warning("Missing date or time in booking request")
             else:
@@ -417,6 +561,7 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                             "Mi indica un orario in questa fascia, per favore?"
                         )
                         state["requires_followup"] = True
+                        entities["expected_slot"] = "time"
                         logger.warning(f"Invalid hour: {hour}")
                     else:
                         appointment_datetime = appointment_date.replace(
@@ -431,13 +576,38 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                             factory = ServiceFactory(mode="real", db_session=db)
                             booking_service = factory.create_booking_service()
                             
-                            # Get first client and accountant for demo
-                            # Production: extract from conversation context
+                            # Client selection:
+                            # 1) prefer recognized client_id from state
+                            # 2) try lookup by captured client_name
+                            # 3) fallback to first client (MVP)
                             from models import Client, Accountant
-                            client = db.query(Client).first()
-                            accountant = db.query(Accountant).filter(
-                                Accountant.status == "active"
-                            ).first()
+                            client = None
+                            if state.get("client_id"):
+                                client = db.query(Client).filter(Client.id == state["client_id"]).first()
+                            if not client and entities.get("client_name"):
+                                name_q = entities.get("client_name")
+                                client = db.query(Client).filter(Client.company_name.ilike(f"%{name_q}%")).first()
+                            if not client and not entities.get("client_name") and not state.get("client_id"):
+                                # Ask name only when needed to complete a booking
+                                state["response"] = "Perfetto. A nome di chi devo registrare l'appuntamento?"
+                                state["requires_followup"] = True
+                                state["action_taken"] = "request_client_name"
+                                entities["expected_slot"] = "name"
+                                return state
+                            if not client:
+                                client = db.query(Client).first()
+
+                            # Prefer a specifically requested accountant when provided
+                            accountant_name = (entities.get("accountant_name") or "").strip()
+                            if accountant_name:
+                                accountant = db.query(Accountant).filter(
+                                    Accountant.status == "active",
+                                    Accountant.name.ilike(f"%{accountant_name}%"),
+                                ).first()
+                            else:
+                                accountant = db.query(Accountant).filter(
+                                    Accountant.status == "active"
+                                ).first()
                             
                             if not client or not accountant:
                                 raise ValueError("Dati anagrafici non disponibili per completare la prenotazione")
@@ -464,6 +634,7 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                                         )
                                     state["requires_followup"] = True
                                     state["action_taken"] = "slot_unavailable"
+                                    entities["expected_slot"] = "time"
                                     return state
                                 else:
                                     # Choose nearest available slot (min abs diff)
@@ -481,6 +652,10 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                                 duration=60,
                                 notes=f"Prenotazione da chiamata: {text}"
                             )
+
+                            # Booking completed; clear any pending slot.
+                            if entities.get("expected_slot"):
+                                entities.pop("expected_slot", None)
                             
                             # Keep response short for TTS (<300 chars) and avoid technical details/IDs
                             base = (
@@ -611,8 +786,8 @@ def execute_action_node(state: ConversationState) -> ConversationState:
         elif intent == Intent.LEAD_CAPTURE:
             # Mock for now (Version A will have real CRM integration)
             state["response"] = (
-                "Grazie. Per capire come aiutarLa, mi dice se è un privato o un'azienda? "
-                "Se preferisce, posso anche fissarLe un appuntamento conoscitivo."
+                "Grazie. Mi dice se è un privato o un'azienda? "
+                "Se preferisce, posso fissare un appuntamento conoscitivo."
             )
             state["action_taken"] = "lead_captured"
             state["requires_followup"] = True
@@ -627,10 +802,16 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                 state["response"] = TAX_QUERY_REJECTION
                 state["action_taken"] = "tax_query_rejected"
                 logger.info("Tax query rejected - redirecting to accountant")
+            elif state.get("entities", {}).get("client_name"):
+                # If user just provided their name, acknowledge and continue naturally.
+                name = state["entities"]["client_name"]
+                state["response"] = f"Piacere, {name}. In cosa posso esserLe utile?"
+                state["action_taken"] = "name_captured"
+                state["requires_followup"] = True
             else:
                 state["response"] = (
                     "Mi scusi, non ho capito bene. "
-                    "Posso aiutarla a prenotare un appuntamento, parlare con un commercialista oppure darle informazioni sullo studio. "
+                    "Posso prenotare un appuntamento, organizzare una chiamata con un commercialista oppure dare informazioni sullo studio. "
                     "Cosa preferisce?"
                 )
             if not state.get("action_taken"):
@@ -824,6 +1005,14 @@ class Orchestrator:
         
         # Build initial state (preserve context if provided)
         initial_state: ConversationState = context.copy() if context else {}
+
+        # Per-turn ephemeral fields should not leak across turns
+        # (they are outputs/diagnostics for the last turn, not durable context).
+        initial_state.pop("response", None)
+        initial_state.pop("response_audio_path", None)
+        initial_state.pop("error", None)
+        initial_state.pop("current_node", None)
+        initial_state["action_taken"] = None
         
         if transcript:
             initial_state["transcript"] = transcript
@@ -841,6 +1030,16 @@ class Orchestrator:
             initial_state["conversation_history"] = []
         if "entities" not in initial_state:
             initial_state["entities"] = {}
+
+        # Record the user turn early so downstream logic (and any LLM fallback)
+        # can see a coherent thread.
+        user_text = initial_state.get("transcript") or initial_state.get("user_input")
+        if user_text and len(str(user_text).strip()) >= 1:
+            initial_state["conversation_history"].append({
+                "role": "user",
+                "content": str(user_text).strip(),
+                "timestamp": datetime.now().isoformat(),
+            })
         
         # Run through graph
         try:
@@ -854,14 +1053,21 @@ class Orchestrator:
             logger.info("="*70)
             
             # ✅ ADD CONTEXT TO RESULT FOR MULTI-TURN CONVERSATIONS
-            # Preserve state for next turn
+            # Preserve state for next turn, but keep it bounded.
+            max_history_items = 20
+            history = final_state.get("conversation_history", [])
+            if isinstance(history, list) and len(history) > max_history_items:
+                history = history[-max_history_items:]
+
             final_state["context"] = {
-                "conversation_history": final_state.get("conversation_history", []),
+                "conversation_history": history,
                 "entities": final_state.get("entities", {}),
                 "client_id": final_state.get("client_id"),
                 "accountant_id": final_state.get("accountant_id"),
                 "intent": final_state.get("intent"),
-                "confidence": final_state.get("confidence", 0.0)
+                "confidence": final_state.get("confidence", 0.0),
+                "requires_followup": bool(final_state.get("requires_followup", False)),
+                "action_taken": final_state.get("action_taken"),
             }
             
             return final_state
