@@ -25,6 +25,14 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your-secret-key-change-in-production')
 
+
+@app.before_request
+def _log_incoming_requests():
+    """Lightweight request logging for Twilio webhooks (helps diagnose missing /voice/incoming hits)."""
+    if request.path.startswith("/voice"):
+        call_sid = request.values.get("CallSid") or request.args.get("CallSid")
+        logger.info(f"➡️  {request.method} {request.path} CallSid={call_sid or 'n/a'}")
+
 # Initialize Twilio client
 twilio_client = Client(
     os.getenv('TWILIO_ACCOUNT_SID'),
@@ -95,9 +103,9 @@ def incoming_call():
     # ✅ CORRECTO: Solo enviamos saludo, NO llamamos orchestrator
     response = VoiceResponse()
     
-    # Saludo inicial
+    # Saluto iniziale (breve, naturale, senza riferimenti a "AI")
     response.say(
-        "Buongiorno, sono l'assistente virtuale dello studio. Come posso aiutarti?",
+        "Buongiorno, Studio Commercialista. Come posso aiutarLa?",
         language="it-IT",
         voice="Google.it-IT-Wavenet-C"
     )
@@ -117,9 +125,9 @@ def incoming_call():
     
     response.append(gather)
     
-    # Fallback si no hay input
+    # Fallback se non arriva input
     response.say(
-        "Non ho sentito nulla. Puoi richiamare quando vuoi. Arrivederci.",
+        "Non ho ricevuto risposta. Può richiamare quando desidera. Arrivederci.",
         language="it-IT",
         voice="Google.it-IT-Wavenet-C"
     )
@@ -128,6 +136,12 @@ def incoming_call():
     logger.info("📤 Sending TwiML response")
     
     return Response(str(response), mimetype="text/xml")
+
+
+# Accept trailing slash too (Twilio console sometimes ends up with /)
+@app.route("/voice/incoming/", methods=["GET", "POST"])
+def incoming_call_slash():
+    return incoming_call()
 
 @app.route("/voice/gather", methods=['POST'])
 def gather_speech():
@@ -158,7 +172,7 @@ def gather_speech():
     if not transcript or len(transcript) < 3:
         logger.warning("⚠️ Empty or very short input")
         response.say(
-            "Non ho sentito nulla. Puoi ripetere per favore?",
+            "Non ho sentito nulla. Può ripetere, per favore?",
             **{k: v for k, v in VOICE_CONFIG.items() if k in ['language', 'voice']}
         )
         
@@ -173,7 +187,7 @@ def gather_speech():
             method='POST'
         )
         response.append(gather)
-        return str(response)
+        return Response(str(response), mimetype="text/xml")
     
     # Check for farewell
     farewell_keywords = ['grazie', 'ciao', 'arrivederci', 'saluti', 'buonasera', 'buonanotte', 'va bene']
@@ -207,7 +221,7 @@ def gather_speech():
         # Clean up session
         del call_sessions[call_sid]
         
-        return str(response)
+        return Response(str(response), mimetype="text/xml")
     
     # Process with orchestrator
     try:
@@ -224,14 +238,14 @@ def gather_speech():
         session_data["call_metadata"]["intents"].append(intent)
         session_data["call_metadata"]["actions"].append(action)
         
-        ai_response = result.get("response", "Mi dispiace, non ho capito. Puoi ripetere?")
+        ai_response = result.get("response", "Mi scusi, non ho capito. Può ripetere, per favore?")
         
         logger.success(f"✅ Orchestrator response: {len(ai_response)} chars")
         logger.info(f"🎯 Intent: {intent} | Action: {action}")
         
     except Exception as e:
         logger.error(f"❌ Orchestrator error: {e}", exc_info=True)
-        ai_response = "Mi dispiace, si è verificato un errore. Puoi riprovare?"
+        ai_response = "Mi scusi, si è verificato un problema tecnico. Può riprovare?"
     
     # Build response
     response.say(
@@ -255,8 +269,14 @@ def gather_speech():
     response.redirect('/voice/gather')
     
     logger.info("📤 Sending TwiML response with gather")
-    
-    return str(response)
+
+    return Response(str(response), mimetype="text/xml")
+
+
+# Accept trailing slash too
+@app.route("/voice/gather/", methods=['POST'])
+def gather_speech_slash():
+    return gather_speech()
 
 
 @app.route("/voice/status", methods=['POST'])
@@ -285,6 +305,11 @@ def call_status():
     return '', 200
 
 
+@app.route("/voice/status/", methods=['POST'])
+def call_status_slash():
+    return call_status()
+
+
 @app.route("/voice/fallback", methods=['POST'])
 def fallback():
     """
@@ -297,12 +322,17 @@ def fallback():
     
     response = VoiceResponse()
     response.say(
-        "Mi dispiace, stiamo avendo problemi tecnici. Per favore richiama più tardi.",
+        "Mi scusi, stiamo avendo problemi tecnici. Può richiamare più tardi.",
         **{k: v for k, v in VOICE_CONFIG.items() if k in ['language', 'voice']}
     )
     response.hangup()
     
-    return str(response)
+    return Response(str(response), mimetype="text/xml")
+
+
+@app.route("/voice/fallback/", methods=['POST'])
+def fallback_slash():
+    return fallback()
 
 
 # ============================================================================
@@ -366,5 +396,6 @@ if __name__ == '__main__':
     app.run(
         host='0.0.0.0',
         port=port,
-        debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+        debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true',
+        use_reloader=False
     )

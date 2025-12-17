@@ -131,7 +131,7 @@ class BookingService:
             accountant_id=accountant_id,
             datetime=datetime,
             duration=duration,
-            notes=notes or f"Appointment with {client.company_name}",
+            notes=notes or f"Appuntamento con {client.company_name}",
             status=AppointmentStatus.PENDING.value  # Pending until confirmed
         )
         

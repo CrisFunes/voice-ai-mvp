@@ -84,46 +84,35 @@ def welcome_node(state: ConversationState) -> ConversationState:
     if "entities" not in state:
         state["entities"] = {}
 
-    # Attempt caller identification by phone number
+    # Attempt caller identification by phone number (store context only; do not echo user input)
     caller_phone = state.get("client_phone")
     if caller_phone:
-        from services import ClientService
         from database import get_db_session
+        from services.factory import ServiceFactory
         try:
             with get_db_session() as db:
-                client_service = ClientService(db)
+                factory = ServiceFactory(mode="real", db_session=db)
+                client_service = factory.create_client_service()
                 client = client_service.find_by_phone(caller_phone)
                 if client:
                     state["client_id"] = client.id
                     state["entities"]["client_name"] = client.company_name
-                    if client.accountant:
+                    if getattr(client, "accountant", None):
                         state["accountant_id"] = client.accountant.id
                         state["entities"]["accountant_name"] = client.accountant.name
                     logger.info(f"📇 Recognized caller {caller_phone} → {client.company_name}")
-                    # Add a subtle personalized greeting prefix
-                    personalized = (
-                        f"Ciao {client.company_name}, sono la receptionist dello studio. "
-                        "Come posso aiutarti oggi? "
-                    )
-                    # Prepend greeting if no user input (e.g., first turn) to keep intent flow
-                    if not state.get("response") and user_input:
-                        state["response"] = personalized + user_input
-                    elif not user_input:
-                        state["response"] = personalized
         except Exception as e:
             logger.warning(f"Caller lookup failed: {e}")
     
-    # ✅ NEW: Detect first call (empty or very short input)
+    # ✅ Detect first call (empty or very short input)
     if not user_input or len(user_input.strip()) < 3:
         logger.info("🎤 Detected first call - generating greeting")
-        
-        # Generate greeting
-        greeting = (
-            "Buongiorno! Benvenuto allo Studio Commercialista. "
-            "Sono l'assistente virtuale e posso aiutarti con domande fiscali, "
-            "prenotare appuntamenti o metterti in contatto con un commercialista. "
-            "Come posso aiutarti oggi?"
-        )
+
+        client_name = state.get("entities", {}).get("client_name")
+        if client_name:
+            greeting = f"Buongiorno, {client_name}. Come posso aiutarLa?"
+        else:
+            greeting = "Buongiorno, Studio Commercialista. Come posso aiutarLa?"
         
         # Set response directly (skip classification)
         state["response"] = greeting
@@ -348,9 +337,8 @@ def execute_action_node(state: ConversationState) -> ConversationState:
     try:
         if intent == Intent.APPOINTMENT_BOOKING:
             # ✅ Real BookingService with DB writes
-            from services import BookingService
+            from services.factory import ServiceFactory
             from datetime import datetime, timedelta
-            import re
             import re
             
             # Extract entities - check both entities dict and raw text
@@ -440,7 +428,8 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                         
                         # ✅ REAL DB WRITE
                         with get_db_session() as db:
-                            booking_service = BookingService(db)
+                            factory = ServiceFactory(mode="real", db_session=db)
+                            booking_service = factory.create_booking_service()
                             
                             # Get first client and accountant for demo
                             # Production: extract from conversation context
@@ -521,14 +510,14 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                     logger.error(f"Booking failed: {e}")
                     logger.exception("Full traceback:")
                     state["response"] = (
-                        "Mi dispiace, non sono riuscito a creare l'appuntamento.\n"
-                        "Per favore, contatta direttamente lo studio."
+                        "Mi scusi, non sono riuscito a fissare l'appuntamento. "
+                        "Può indicarmi di nuovo giorno e orario, per favore?"
                     )
                     state["error"] = str(e)      
 
         elif intent == Intent.ACCOUNTANT_ROUTING:
             # ✅ Real ClientService for accountant lookup
-            from services import ClientService
+            from services.factory import ServiceFactory
             from models import Accountant
             
             accountant_name = entities.get("accountant_name", "")
@@ -539,16 +528,15 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                     accountants = db.query(Accountant).filter(
                         Accountant.status == "active"
                     ).limit(3).all()
-                    
-                    accountant_list = "\n".join([
-                        f"- {acc.name} ({acc.specialization})"
-                        for acc in accountants
-                    ])
-                    
-                    state["response"] = (
-                        f"Con quale commercialista vorresti parlare?\n\n"
-                        f"Alcuni dei nostri specialisti:\n{accountant_list}"
-                    )
+
+                    examples = ", ".join([acc.name for acc in accountants if acc and acc.name])
+                    if examples:
+                        state["response"] = (
+                            "Con quale commercialista desidera parlare? "
+                            f"Ad esempio: {examples}."
+                        )
+                    else:
+                        state["response"] = "Con quale commercialista desidera parlare? Mi dica pure il cognome."
                     state["requires_followup"] = True
             else:
                 # Search for accountant in DB
@@ -559,17 +547,14 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                     
                     if accountant:
                         state["response"] = (
-                            f"📞 {accountant.name}\n\n"
-                            f"Specializzazione: {accountant.specialization}\n"
-                            f"Email: {accountant.email}\n"
-                            f"Telefono: {accountant.phone}\n\n"
-                            f"Vuoi prenotare un appuntamento?"
+                            f"Ho trovato {accountant.name}. "
+                            "Vuole che Le fissi un appuntamento?"
                         )
                         state["action_taken"] = "accountant_located"
                     else:
                         state["response"] = (
-                            f"Non ho trovato '{accountant_name}' nel nostro database.\n"
-                            f"Vuoi che ti mostri l'elenco completo dei commercialisti?"
+                            f"Non ho trovato '{accountant_name}'. "
+                            "Vuole ripetermi il cognome, per favore?"
                         )
                         state["requires_followup"] = True
             
@@ -577,46 +562,47 @@ def execute_action_node(state: ConversationState) -> ConversationState:
         
         elif intent == Intent.OFFICE_INFO:
             # ✅ Real OfficeInfoService
-            from services import OfficeInfoService
+            from services.factory import ServiceFactory
             
             text_lower = text.lower()
             
             with get_db_session() as db:
-                info_service = OfficeInfoService(db)
+                factory = ServiceFactory(mode="real", db_session=db)
+                info_service = factory.create_office_info_service()
                 
                 # More robust matching for office hours (handle 'chiudete', 'chiude', 'aperto')
                 if "orari" in text_lower or "apert" in text_lower or "chiud" in text_lower:
                     # Get office hours from DB
                     hours = info_service.get_office_hours()
-                    state["response"] = f"📅 Orari Studio:\n\n{hours}"
+                    state["response"] = f"Orari studio: {hours}"
                 
                 elif "indirizzo" in text_lower or "dove" in text_lower:
                     # Get address from DB
                     address = info_service.get_address()
                     if address:
-                        state["response"] = f"📍 Sede:\n{address}"
+                        state["response"] = f"La sede dello studio è in {address}"
                     else:
                         state["response"] = "Indirizzo non disponibile al momento."
                 
                 elif "contatto" in text_lower or "telefono" in text_lower or "email" in text_lower:
                     # Get contact info from DB
                     contacts = info_service.get_contact_info()
-                    contact_str = "\n".join([f"{k}: {v}" for k, v in contacts.items()])
-                    state["response"] = f"📞 Contatti:\n\n{contact_str}"
+                    phone = contacts.get("office_phone") or contacts.get("phone")
+                    if phone:
+                        state["response"] = f"Può contattare lo studio telefonicamente al {phone}."
+                    else:
+                        state["response"] = "Può contattare lo studio telefonicamente."
                 
                 else:
                     # General info
                     address = info_service.get_address()
                     contacts = info_service.get_contact_info()
                     phone = contacts.get("office_phone", "N/A")
-                    email = contacts.get("office_email", "N/A")
-                    
+
                     state["response"] = (
-                        f"ℹ️ Informazioni Studio:\n\n"
-                        f"📍 {address}\n"
-                        f"📞 {phone}\n"
-                        f"📧 {email}\n\n"
-                        f"Cosa vorresti sapere nello specifico?"
+                        f"Lo studio è in {address}. "
+                        f"Per contattarci può chiamare il {phone}. "
+                        "Di cosa ha bisogno nello specifico?"
                     )
             
             state["action_taken"] = "office_info_provided"
@@ -625,11 +611,8 @@ def execute_action_node(state: ConversationState) -> ConversationState:
         elif intent == Intent.LEAD_CAPTURE:
             # Mock for now (Version A will have real CRM integration)
             state["response"] = (
-                "Benvenuto! Siamo lieti di conoscerti.\n\n"
-                "Per offrirti la migliore consulenza, ho bisogno di qualche informazione:\n\n"
-                "1. Sei un privato o hai un'azienda?\n"
-                "2. Di cosa hai bisogno? (es: aprire partita IVA, consulenza fiscale, ecc.)\n\n"
-                "Oppure preferisci fissare un appuntamento conoscitivo gratuito?"
+                "Grazie. Per capire come aiutarLa, mi dice se è un privato o un'azienda? "
+                "Se preferisce, posso anche fissarLe un appuntamento conoscitivo."
             )
             state["action_taken"] = "lead_captured"
             state["requires_followup"] = True
