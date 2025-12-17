@@ -45,6 +45,14 @@ class LeadCategory(str, PyEnum):
     COMPETITOR_SWITCH = "competitor_switch"
     INFORMATION = "information"
 
+
+class CallLogStatus(str, PyEnum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    CALLBACK_REQUESTED = "callback_requested"
+    TRANSFERRED = "transferred"
+    CANCELLED = "cancelled"
+
 # ============================================================================
 # MODELS
 # ============================================================================
@@ -187,6 +195,50 @@ class Lead(Base):
     
     def __repr__(self):
         return f"<Lead {self.name or self.company_name} ({self.category})>"
+
+
+class CallLog(Base):
+    """Log of calls and routing outcomes"""
+    __tablename__ = "call_logs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    call_sid = Column(String(64), nullable=True, index=True)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True)
+    accountant_id = Column(String(36), ForeignKey("accountants.id"), nullable=True)
+
+    caller_phone = Column(String(30), nullable=True, index=True)
+    reason = Column(Text, nullable=True)
+    urgency = Column(String(20), nullable=True)  # low/normal/high
+    callback_requested = Column(Boolean, default=False)
+    status = Column(String(30), nullable=False, default=CallLogStatus.PENDING.value)
+
+    created_at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN {tuple(s.value for s in CallLogStatus)}",
+            name="valid_calllog_status"
+        ),
+    )
+
+    def __repr__(self):
+        return f"<CallLog {self.caller_phone or self.client_id} ({self.status})>"
+
+
+class OfficeConfig(Base):
+    """General office configuration key-value store"""
+    __tablename__ = "office_config"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=False)
+    category = Column(String(50), nullable=True, index=True)
+    description = Column(String(200), nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    def __repr__(self):
+        return f"<OfficeConfig {self.key}={self.value[:30]}>"
 
 # ============================================================================
 # INITIALIZATION UTILITY

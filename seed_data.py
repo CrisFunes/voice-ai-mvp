@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db_session, init_db
 from models import (
-    Client, Accountant, Appointment, OfficeInfo, Lead,
+    Client, Accountant, Appointment, OfficeInfo, Lead, OfficeConfig,
     Specialization, AccountantStatus, AppointmentStatus, LeadCategory
 )
 from loguru import logger
@@ -350,6 +350,38 @@ def create_office_info(session: Session) -> List[OfficeInfo]:
     return office_info_list
 
 
+def create_office_config(session: Session) -> List[OfficeConfig]:
+    """Create generic office configuration entries"""
+    logger.info("Creating office config...")
+
+    config_data = [
+        ("office_name", "Studio Commercialista Rossi & Bianchi", "meta", "Denominazione ufficio"),
+        ("office_address", "Via Roma 123, 20121 Milano (MI)", "address", "Indirizzo principale"),
+        ("office_phone", "+39 02 1234567", "contact", "Numero fisso"),
+        ("office_mobile", "+39 333 1234567", "contact", "Numero mobile urgenze"),
+        ("office_email", "info@studiocommercialista.it", "contact", "Email principale"),
+        ("office_hours_weekday", "09:00-18:00", "hours", "Orario lun-ven"),
+        ("office_hours_saturday", "09:00-13:00", "hours", "Orario sabato"),
+        ("office_hours_sunday", "closed", "hours", "Chiuso domenica"),
+        ("holiday_notice", "Chiuso dal 24 dicembre al 6 gennaio", "notice", "Chiusura natalizia"),
+    ]
+
+    configs = []
+    for key, value, category, description in config_data:
+        cfg = OfficeConfig(
+            key=key,
+            value=value,
+            category=category,
+            description=description
+        )
+        session.add(cfg)
+        configs.append(cfg)
+
+    session.commit()
+    logger.success(f"✅ Created {len(configs)} office config entries")
+    return configs
+
+
 # ============================================================================
 # MAIN SEEDING
 # ============================================================================
@@ -372,6 +404,7 @@ def seed_database(drop_existing: bool = False):
         clients = create_clients(session, accountants)
         appointments = create_appointments(session, clients, accountants)
         office_info = create_office_info(session)
+        office_config = create_office_config(session)
     
     logger.info("="*70)
     logger.success("DATABASE SEEDING - COMPLETE")
@@ -381,6 +414,7 @@ def seed_database(drop_existing: bool = False):
     logger.info(f"   - Clients: {len(clients)}")
     logger.info(f"   - Appointments: {len(appointments)}")
     logger.info(f"   - Office Info: {len(office_info)}")
+    logger.info(f"   - Office Config: {len(office_config)}")
     logger.info("="*70)
     
     from database import get_table_counts

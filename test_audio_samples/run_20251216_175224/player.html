@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Accent Comparison Player</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .text-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .text-content {
+            background: #f8f9fa;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+            margin: 10px 0;
+            font-style: italic;
+        }
+        .audio-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .audio-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+        }
+        .audio-label {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .audio-description {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+        .cost-badge {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-left: 5px;
+        }
+        .cost-badge.expensive {
+            background: #ffc107;
+            color: #000;
+        }
+        audio {
+            width: 100%;
+            margin-top: 5px;
+        }
+        .legend {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .legend-item {
+            display: inline-block;
+            margin-right: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎧 TTS Accent Comparison Player</h1>
+    
+    <div class="legend">
+        <strong>Leyenda de costos:</strong>
+        <span class="legend-item"><span class="cost-badge">$</span> Standard ($0.015-0.03/1K)</span>
+        <span class="legend-item"><span class="cost-badge expensive">$$</span> Premium ($0.06/1K)</span>
+    </div>
+    
+    <div class="text-section">
+        <h2>1. Saludo profesional</h2>
+        <div class="text-content">Buongiorno, sono il suo commercialista di fiducia. Come posso aiutarla oggi?</div>
+        <div class="audio-grid">
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - alloy
+                    <span class="cost-badge ">$0.0011</span>
+                </div>
+                <div class="audio-description">Modelo estándar, calidad básica, acento neutral/anglófono</div>
+                <audio controls preload="none">
+                    <source src="greeting_tts1_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - nova
+                    <span class="cost-badge ">$0.0011</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="greeting_tts1_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - echo
+                    <span class="cost-badge ">$0.0011</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz masculina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="greeting_tts1_echo.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - alloy
+                    <span class="cost-badge ">$0.0023</span>
+                </div>
+                <div class="audio-description">Modelo HD, mejor calidad audio, PERO sigue con acento anglófono</div>
+                <audio controls preload="none">
+                    <source src="greeting_tts1hd_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - nova
+                    <span class="cost-badge ">$0.0023</span>
+                </div>
+                <div class="audio-description">Modelo HD, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="greeting_tts1hd_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0046</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones LIGERAS de acento italiano</div>
+                <audio controls preload="none">
+                    <source src="greeting_gpt4o_audio_alloy_light.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0046</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones FUERTES de acento milanés</div>
+                <audio controls preload="none">
+                    <source src="greeting_gpt4o_audio_alloy_strong.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - nova
+                    <span class="cost-badge ">$0.0046</span>
+                </div>
+                <div class="audio-description">Modelo avanzado, voz femenina, acento italiano fuerte</div>
+                <audio controls preload="none">
+                    <source src="greeting_gpt4o_audio_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-section">
+        <h2>2. Términos técnicos fiscales</h2>
+        <div class="text-content">La dichiarazione IVA trimestrale deve essere presentata entro il giorno quindici del mese successivo al trimestre di riferimento.</div>
+        <div class="audio-grid">
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - alloy
+                    <span class="cost-badge ">$0.0019</span>
+                </div>
+                <div class="audio-description">Modelo estándar, calidad básica, acento neutral/anglófono</div>
+                <audio controls preload="none">
+                    <source src="technical_tts1_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - nova
+                    <span class="cost-badge ">$0.0019</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="technical_tts1_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - echo
+                    <span class="cost-badge ">$0.0019</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz masculina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="technical_tts1_echo.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - alloy
+                    <span class="cost-badge ">$0.0039</span>
+                </div>
+                <div class="audio-description">Modelo HD, mejor calidad audio, PERO sigue con acento anglófono</div>
+                <audio controls preload="none">
+                    <source src="technical_tts1hd_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - nova
+                    <span class="cost-badge ">$0.0039</span>
+                </div>
+                <div class="audio-description">Modelo HD, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="technical_tts1hd_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0077</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones LIGERAS de acento italiano</div>
+                <audio controls preload="none">
+                    <source src="technical_gpt4o_audio_alloy_light.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0077</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones FUERTES de acento milanés</div>
+                <audio controls preload="none">
+                    <source src="technical_gpt4o_audio_alloy_strong.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - nova
+                    <span class="cost-badge ">$0.0077</span>
+                </div>
+                <div class="audio-description">Modelo avanzado, voz femenina, acento italiano fuerte</div>
+                <audio controls preload="none">
+                    <source src="technical_gpt4o_audio_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-section">
+        <h2>3. Números y porcentajes</h2>
+        <div class="text-content">L'aliquota IRES ordinaria è del ventiquattro per cento, mentre per le società di capitali l'IVA può variare dal quattro al ventidue per cento.</div>
+        <div class="audio-grid">
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - alloy
+                    <span class="cost-badge ">$0.0021</span>
+                </div>
+                <div class="audio-description">Modelo estándar, calidad básica, acento neutral/anglófono</div>
+                <audio controls preload="none">
+                    <source src="numbers_tts1_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - nova
+                    <span class="cost-badge ">$0.0021</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="numbers_tts1_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - echo
+                    <span class="cost-badge ">$0.0021</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz masculina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="numbers_tts1_echo.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - alloy
+                    <span class="cost-badge ">$0.0043</span>
+                </div>
+                <div class="audio-description">Modelo HD, mejor calidad audio, PERO sigue con acento anglófono</div>
+                <audio controls preload="none">
+                    <source src="numbers_tts1hd_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - nova
+                    <span class="cost-badge ">$0.0043</span>
+                </div>
+                <div class="audio-description">Modelo HD, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="numbers_tts1hd_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0085</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones LIGERAS de acento italiano</div>
+                <audio controls preload="none">
+                    <source src="numbers_gpt4o_audio_alloy_light.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0085</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones FUERTES de acento milanés</div>
+                <audio controls preload="none">
+                    <source src="numbers_gpt4o_audio_alloy_strong.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - nova
+                    <span class="cost-badge ">$0.0085</span>
+                </div>
+                <div class="audio-description">Modelo avanzado, voz femenina, acento italiano fuerte</div>
+                <audio controls preload="none">
+                    <source src="numbers_gpt4o_audio_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-section">
+        <h2>4. Respuesta compleja (real)</h2>
+        <div class="text-content">Dunque, per quanto riguarda la sua domanda sulle deduzioni fiscali, le spiego meglio. Secondo la normativa vigente, le spese di carburante sono deducibili al venti per cento per i veicoli aziendali. Tuttavia, se il veicolo è utilizzato esclusivamente per l'attività professionale, la percentuale di deduzione può aumentare fino all'ottanta per cento. Le consiglio di conservare tutti i documenti giustificativi.</div>
+        <div class="audio-grid">
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - alloy
+                    <span class="cost-badge ">$0.0062</span>
+                </div>
+                <div class="audio-description">Modelo estándar, calidad básica, acento neutral/anglófono</div>
+                <audio controls preload="none">
+                    <source src="complex_tts1_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - nova
+                    <span class="cost-badge ">$0.0062</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="complex_tts1_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - echo
+                    <span class="cost-badge ">$0.0062</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz masculina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="complex_tts1_echo.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - alloy
+                    <span class="cost-badge ">$0.0123</span>
+                </div>
+                <div class="audio-description">Modelo HD, mejor calidad audio, PERO sigue con acento anglófono</div>
+                <audio controls preload="none">
+                    <source src="complex_tts1hd_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - nova
+                    <span class="cost-badge ">$0.0123</span>
+                </div>
+                <div class="audio-description">Modelo HD, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="complex_tts1hd_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0247</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones LIGERAS de acento italiano</div>
+                <audio controls preload="none">
+                    <source src="complex_gpt4o_audio_alloy_light.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0247</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones FUERTES de acento milanés</div>
+                <audio controls preload="none">
+                    <source src="complex_gpt4o_audio_alloy_strong.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - nova
+                    <span class="cost-badge ">$0.0247</span>
+                </div>
+                <div class="audio-description">Modelo avanzado, voz femenina, acento italiano fuerte</div>
+                <audio controls preload="none">
+                    <source src="complex_gpt4o_audio_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-section">
+        <h2>5. Palabras difíciles de pronunciar</h2>
+        <div class="text-content">Gli adempimenti fiscali richiedono particolare attenzione: dichiarazione, registrazione, liquidazione, ritenuta d'acconto, contribuzione previdenziale.</div>
+        <div class="audio-grid">
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - alloy
+                    <span class="cost-badge ">$0.0023</span>
+                </div>
+                <div class="audio-description">Modelo estándar, calidad básica, acento neutral/anglófono</div>
+                <audio controls preload="none">
+                    <source src="difficult_words_tts1_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - nova
+                    <span class="cost-badge ">$0.0023</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="difficult_words_tts1_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1 - echo
+                    <span class="cost-badge ">$0.0023</span>
+                </div>
+                <div class="audio-description">Modelo estándar, voz masculina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="difficult_words_tts1_echo.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - alloy
+                    <span class="cost-badge ">$0.0045</span>
+                </div>
+                <div class="audio-description">Modelo HD, mejor calidad audio, PERO sigue con acento anglófono</div>
+                <audio controls preload="none">
+                    <source src="difficult_words_tts1hd_alloy.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    tts-1-hd - nova
+                    <span class="cost-badge ">$0.0045</span>
+                </div>
+                <div class="audio-description">Modelo HD, voz femenina, acento neutral</div>
+                <audio controls preload="none">
+                    <source src="difficult_words_tts1hd_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0091</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones LIGERAS de acento italiano</div>
+                <audio controls preload="none">
+                    <source src="difficult_words_gpt4o_audio_alloy_light.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - alloy
+                    <span class="cost-badge ">$0.0091</span>
+                </div>
+                <div class="audio-description">Modelo avanzado con instrucciones FUERTES de acento milanés</div>
+                <audio controls preload="none">
+                    <source src="difficult_words_gpt4o_audio_alloy_strong.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+            <div class="audio-item">
+                <div class="audio-label">
+                    gpt-4o-audio-preview - nova
+                    <span class="cost-badge ">$0.0091</span>
+                </div>
+                <div class="audio-description">Modelo avanzado, voz femenina, acento italiano fuerte</div>
+                <audio controls preload="none">
+                    <source src="difficult_words_gpt4o_audio_nova.mp3" type="audio/mpeg">
+                </audio>
+            </div>
+        </div>
+    </div>
+
+
+</body>
+</html>

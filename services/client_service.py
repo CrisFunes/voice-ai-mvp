@@ -53,6 +53,11 @@ class ClientService:
     def find_by_tax_code(self, tax_code: str) -> Optional[Client]:
         """Find client by tax code (exact match)"""
         return self.db.query(Client).filter(Client.tax_code == tax_code).first()
+
+    def find_by_phone(self, phone: str) -> Optional[Client]:
+        """Find client by phone (exact match)"""
+        normalized = phone.strip()
+        return self.db.query(Client).filter(Client.phone == normalized).first()
     
     def get_assigned_accountant(self, client_id: str) -> Optional[Accountant]:
         """Get accountant assigned to client"""

@@ -46,6 +46,7 @@ class ConversationState(TypedDict, total=False):
     conversation_history: List[dict]      # Previous turns
     client_id: Optional[str]              # Identified client (if lookup succeeded)
     accountant_id: Optional[str]          # Target accountant (if routing)
+    client_phone: Optional[str]           # Caller phone number (if available)
     
     # Output
     response: str                         # Final response text
@@ -81,6 +82,35 @@ def welcome_node(state: ConversationState) -> ConversationState:
     # Initialize entities
     if "entities" not in state:
         state["entities"] = {}
+
+    # Attempt caller identification by phone number
+    caller_phone = state.get("client_phone")
+    if caller_phone:
+        from services import ClientService
+        from database import get_db_session
+        try:
+            with get_db_session() as db:
+                client_service = ClientService(db)
+                client = client_service.find_by_phone(caller_phone)
+                if client:
+                    state["client_id"] = client.id
+                    state["entities"]["client_name"] = client.company_name
+                    if client.accountant:
+                        state["accountant_id"] = client.accountant.id
+                        state["entities"]["accountant_name"] = client.accountant.name
+                    logger.info(f"📇 Recognized caller {caller_phone} → {client.company_name}")
+                    # Add a subtle personalized greeting prefix
+                    personalized = (
+                        f"Ciao {client.company_name}, sono la receptionist dello studio. "
+                        "Come posso aiutarti oggi? "
+                    )
+                    # Prepend greeting if no user input (e.g., first turn) to keep intent flow
+                    if not state.get("response") and user_input:
+                        state["response"] = personalized + user_input
+                    elif not user_input:
+                        state["response"] = personalized
+        except Exception as e:
+            logger.warning(f"Caller lookup failed: {e}")
     
     # ✅ NEW: Detect first call (empty or very short input)
     if not user_input or len(user_input.strip()) < 3:

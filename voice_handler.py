@@ -11,6 +11,7 @@ from tenacity import (
     retry_if_exception_type
 )
 import config
+import base64
 
 # Supported audio formats
 SUPPORTED_FORMATS = {'.wav', '.mp3', '.m4a', '.webm', '.ogg'}
@@ -212,7 +213,7 @@ class VoiceHandler:
         try:
             # Generate speech
             response = self.client.audio.speech.create(
-                model="tts-1",  # Standard quality (tts-1-hd for higher quality)
+                model="tts-1-hd",  # Standard quality (tts-1-hd for higher quality)
                 voice=voice,
                 input=text,
                 speed=speed,
@@ -259,6 +260,175 @@ class VoiceHandler:
             error_msg = f"Errore imprevisto durante la sintesi vocale: {str(e)}"
             logger.exception(error_msg)
             raise RuntimeError(error_msg) from e
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((openai.APIError, openai.APIConnectionError))
+    )
+    def synthesize_with_accent(
+        self,
+        text: str,
+        voice: VoiceType = "alloy",
+        speed: float = 1.0
+    ) -> str:
+        """
+        Synthesize Italian text with NATIVE ITALIAN ACCENT using gpt-4o-audio-preview.
+        
+        This method uses OpenAI's advanced audio model with steering instructions
+        to produce Italian speech with authentic Italian accent and intonation,
+        eliminating the "translated from English" effect.
+        
+        Args:
+            text: Italian text to synthesize
+            voice: Voice profile (alloy recommended for Italian)
+            speed: Speech speed (not directly supported, ignored)
+        
+        Returns:
+            Path to generated audio file in temp directory
+        
+        Raises:
+            ValueError: Empty text or text too long
+            RuntimeError: API error
+        
+        **CRITICAL:** This method uses gpt-4o-audio-preview which costs
+        ~4x more than tts-1 but produces NATIVE Italian accent.
+        Cost: ~$0.06 per 1K characters vs $0.015 for tts-1.
+        
+        **WHY THIS WORKS:**
+        The model receives instructions to speak with authentic Italian accent,
+        avoiding the neutral/anglophone pronunciation of standard TTS voices.
+        """
+        # Validation 1: Text not empty
+        if not text or not text.strip():
+            error_msg = "Il testo da sintetizzare è vuoto"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # Validation 2: Text length
+        if len(text) > MAX_TTS_LENGTH:
+            logger.warning(
+                f"Testo troppo lungo: {len(text)} caratteri. "
+                f"Troncamento a {MAX_TTS_LENGTH}"
+            )
+            text = text[:MAX_TTS_LENGTH]
+        
+        logger.info(
+            f"Synthesizing speech WITH ITALIAN ACCENT: {len(text)} chars, "
+            f"voice={voice}"
+        )
+        
+        try:
+            # CRITICAL: Use gpt-4o-audio-preview with accent instructions
+            completion = self.client.chat.completions.create(
+                model="gpt-4o-audio-preview",
+                modalities=["text", "audio"],
+                audio={
+                    "voice": voice,
+                    "format": "mp3"
+                },
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """Parla come un MADRELINGUA ITALIANO del Nord Italia (Milano/Lombardia).
+
+ACCENTO E PRONUNCIA RICHIESTI:
+- Intonazione naturale italiana, NON neutrale o anglosassone
+- Pronuncia ogni parola con accento italiano autentico
+- Ritmo e cadenza tipici di un italiano settentrionale
+- Enfasi sulle vocali aperte/chiuse secondo fonetica italiana
+- Evita qualsiasi traccia di pronuncia anglofona
+
+STILE VOCALE:
+- Tono professionale ma cordiale
+- Come un commercialista milanese che parla con un cliente
+- Sicuro e competente, ma non freddo o robotico
+- Velocità moderata, chiara e comprensibile
+
+FONDAMENTALE: 
+Devi suonare come un ITALIANO che parla italiano, 
+NON come uno straniero che legge italiano."""
+                    },
+                    {
+                        "role": "user",
+                        "content": text
+                    }
+                ],
+            )
+            
+            # Decode base64 audio
+            audio_data = completion.choices[0].message.audio.data
+            mp3_bytes = base64.b64decode(audio_data)
+            
+            # Generate unique filename
+            import uuid
+            output_filename = f"tts_accent_{uuid.uuid4().hex[:8]}.mp3"
+            output_path = config.TEMP_DIR / output_filename
+            
+            # Write audio file
+            with open(output_path, "wb") as f:
+                f.write(mp3_bytes)
+            
+            logger.success(
+                f"Speech synthesis WITH ITALIAN ACCENT complete: {output_path.name}"
+            )
+            
+            return str(output_path)
+        
+        except openai.RateLimitError as e:
+            error_msg = (
+                "Limite richieste API raggiunto. "
+                "Attendi qualche minuto e riprova."
+            )
+            logger.error(f"Rate limit error: {e}")
+            raise RuntimeError(error_msg) from e
+        
+        except openai.APIError as e:
+            error_msg = f"Errore API OpenAI (audio model): {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        
+        except KeyError as e:
+            error_msg = (
+                "Errore nella risposta API: formato audio non trovato. "
+                "Il modello gpt-4o-audio-preview potrebbe non essere disponibile."
+            )
+            logger.error(f"KeyError accessing audio data: {e}")
+            raise RuntimeError(error_msg) from e
+        
+        except Exception as e:
+            error_msg = f"Errore imprevisto durante la sintesi: {str(e)}"
+            logger.exception(error_msg)
+            raise RuntimeError(error_msg) from e
+        
+    def synthesize_italian(
+        self,
+        text: str,
+        use_accent_model: bool = True,
+        **kwargs
+    ) -> str:
+        """
+        Synthesize Italian text with optional accent steering.
+        
+        This is a convenience wrapper that allows easy switching between:
+        - Standard TTS (faster, cheaper, anglophone accent)
+        - Accent-steered TTS (slower, 4x cost, native Italian accent)
+        
+        Args:
+            text: Italian text to synthesize
+            use_accent_model: If True, use gpt-4o-audio-preview with accent
+                            If False, use standard tts-1/tts-1-hd
+            **kwargs: Additional arguments passed to underlying method
+        
+        Returns:
+            Path to generated audio file
+        """
+        if use_accent_model:
+            logger.info("Using ACCENT-STEERED model (gpt-4o-audio-preview)")
+            return self.synthesize_with_accent(text, **kwargs)
+        else:
+            logger.info("Using STANDARD TTS model (tts-1/tts-1-hd)")
+            return self.synthesize(text, **kwargs)
     
     def cleanup_temp_files(self, max_age_hours: int = 1) -> int:
         """
