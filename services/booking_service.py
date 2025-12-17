@@ -113,17 +113,17 @@ class BookingService:
         # Validation 1: Check client exists
         client = self.db.query(Client).filter(Client.id == client_id).first()
         if not client:
-            raise ValueError(f"Client {client_id} not found")
+            raise ValueError("Cliente non trovato")
         
         # Validation 2: Check accountant exists and is active
         accountant = self.db.query(Accountant).filter(Accountant.id == accountant_id).first()
         if not accountant:
-            raise ValueError(f"Accountant {accountant_id} not found")
+            raise ValueError("Commercialista non trovato")
         
         # Validation 3: Check slot is available
         available_slots = self.check_availability(accountant_id, datetime, duration)
         if datetime not in available_slots:
-            raise ValueError(f"Slot {datetime} not available for accountant {accountant_id}")
+            raise ValueError("Orario non disponibile")
         
         # Create appointment
         appointment = Appointment(

@@ -2,7 +2,8 @@
 Twilio Voice Server - Voice AI Agent MVP
 Integrates existing orchestrator, RAG engine, and database
 """
-from flask import Flask, request, session
+from urllib import response
+from flask import Flask, Response, request, session
 from twilio.twiml.voice_response import VoiceResponse, Gather, Say
 from twilio.rest import Client
 from loguru import logger
@@ -85,6 +86,11 @@ def incoming_call():
     logger.info(f"📞 INCOMING CALL: {call_sid}")
     logger.info(f"From: {from_number} → To: {to_number}")
     logger.info("=" * 70)
+
+    # Ensure per-call session is initialized
+    session_data = call_sessions[call_sid]
+    if session_data.get("start_time") is None:
+        session_data["start_time"] = datetime.now()
     
     # ✅ CORRECTO: Solo enviamos saludo, NO llamamos orchestrator
     response = VoiceResponse()
@@ -120,8 +126,8 @@ def incoming_call():
     response.hangup()
     
     logger.info("📤 Sending TwiML response")
-    return str(response)
-
+    
+    return Response(str(response), mimetype="text/xml")
 
 @app.route("/voice/gather", methods=['POST'])
 def gather_speech():
@@ -141,6 +147,9 @@ def gather_speech():
     
     # Get session
     session_data = call_sessions[call_sid]
+    if session_data.get("start_time") is None:
+        # Defensive: start_time should be set in /voice/incoming, but ensure it's present
+        session_data["start_time"] = datetime.now()
     session_data["turn_count"] += 1
     
     response = VoiceResponse()
@@ -179,9 +188,15 @@ def gather_speech():
         logger.info(f"🔚 Farewell detected: '{transcript}'")
         
         # Calculate call duration
-        duration = (datetime.now() - session_data["start_time"]).total_seconds()
-        
-        logger.info(f"📊 Call stats: {session_data['turn_count']} turns, {duration:.1f}s")
+        start_time = session_data.get("start_time")
+        duration = None
+        if isinstance(start_time, datetime):
+            duration = (datetime.now() - start_time).total_seconds()
+
+        if duration is not None:
+            logger.info(f"📊 Call stats: {session_data['turn_count']} turns, {duration:.1f}s")
+        else:
+            logger.info(f"📊 Call stats: {session_data['turn_count']} turns")
         
         response.say(
             "Grazie per aver chiamato lo Studio Commercialista. Arrivederci!",

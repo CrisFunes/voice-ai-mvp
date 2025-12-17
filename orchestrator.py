@@ -8,6 +8,7 @@ from datetime import datetime
 from langgraph.graph import StateGraph, END
 from loguru import logger
 import json
+import re
 from rag_engine import RAGEngine, get_rag_engine
 
 # ============================================================================
@@ -185,9 +186,12 @@ def classify_intent_node(state: ConversationState) -> ConversationState:
     text_lower = text.lower()
     
     # Tax query detection (to REJECT, not answer)
-    tax_keywords = ["iva", "ires", "irap", "tasse", "fiscal", "scadenz", "dichiarazione", 
-                    "deduz", "detraz", "contribut", "imposta", "aliquota", "codice tributo",
-                    "regime forfett", "730", "redditi"]
+    tax_keywords = [
+        "iva", "ires", "irap", "tasse", "fiscal", "scadenz", "dichiarazione",
+        "deduz", "dedur", "dedurre", "detraz", "detrare",
+        "contribut", "imposta", "aliquota", "codice tributo",
+        "regime forfett", "730", "redditi", "f24", "imu", "tari", "inps",
+    ]
     if any(keyword in text_lower for keyword in tax_keywords):
         logger.info("🚫 Tax query detected - will redirect to accountant")
         state["intent"] = Intent.UNKNOWN  # Treat as unknown, will give rejection message
@@ -347,6 +351,7 @@ def execute_action_node(state: ConversationState) -> ConversationState:
             from services import BookingService
             from datetime import datetime, timedelta
             import re
+            import re
             
             # Extract entities - check both entities dict and raw text
             date_str = entities.get("date", "")
@@ -385,10 +390,8 @@ def execute_action_node(state: ConversationState) -> ConversationState:
             # Parse date/time from entities
             if not date_str or not time_str:
                 state["response"] = (
-                    "Per prenotare un appuntamento, ho bisogno di:\n"
-                    "- Data preferita\n"
-                    "- Orario preferito\n\n"
-                    "Esempio: 'Vorrei un appuntamento domani alle 15:00'"
+                    "Per fissare un appuntamento mi serve il giorno e l'orario. "
+                    "Ad esempio: 'Domani alle 15'."
                 )
                 state["requires_followup"] = True
                 logger.warning("Missing date or time in booking request")
@@ -422,9 +425,8 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                     # Validate business hours (9-18)
                     if hour < 9 or hour >= 18:
                         state["response"] = (
-                            f"Mi dispiace, l'orario richiesto ({hour}:00) è fuori dall'orario d'ufficio.\n\n"
-                            f"Orari disponibili: 9:00 - 18:00\n"
-                            f"Scegli un altro orario."
+                            "L'orario richiesto è fuori dall'orario di studio (9:00-18:00). "
+                            "Mi indica un orario in questa fascia, per favore?"
                         )
                         state["requires_followup"] = True
                         logger.warning(f"Invalid hour: {hour}")
@@ -432,6 +434,7 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                         appointment_datetime = appointment_date.replace(
                             hour=hour, minute=minute, second=0, microsecond=0
                         )
+                        requested_datetime = appointment_datetime
                         
                         logger.info(f"Creating appointment for: {appointment_datetime}")
                         
@@ -448,7 +451,7 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                             ).first()
                             
                             if not client or not accountant:
-                                raise ValueError("No clients or accountants in database")
+                                raise ValueError("Dati anagrafici non disponibili per completare la prenotazione")
                             
                             logger.info(f"Booking for client: {client.company_name}, accountant: {accountant.name}")
 
@@ -457,7 +460,22 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                             if appointment_datetime not in available_slots:
                                 if explicit_time:
                                     # User explicitly requested this time; do not auto-reschedule
-                                    raise ValueError(f"Slot {appointment_datetime} not available for accountant {accountant.id}")
+                                    suggestions = ", ".join(
+                                        [s.strftime("%H:%M") for s in sorted(available_slots)[:3]]
+                                    )
+                                    if suggestions:
+                                        state["response"] = (
+                                            f"In quell'orario non c'è disponibilità. "
+                                            f"Le propongo questi orari: {suggestions}. Quale preferisce?"
+                                        )
+                                    else:
+                                        state["response"] = (
+                                            "In quell'orario non c'è disponibilità. "
+                                            "Vuole indicarmi un altro orario, tra le 9:00 e le 18:00?"
+                                        )
+                                    state["requires_followup"] = True
+                                    state["action_taken"] = "slot_unavailable"
+                                    return state
                                 else:
                                     # Choose nearest available slot (min abs diff)
                                     if available_slots:
@@ -465,28 +483,27 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                                         logger.warning(f"Requested slot {appointment_datetime} not available, choosing nearest {chosen}")
                                         appointment_datetime = chosen
                                     else:
-                                        raise ValueError(f"Slot {appointment_datetime} not available for accountant {accountant.id}")
+                                        raise ValueError("Nessuna disponibilità per la data richiesta")
 
                             appointment = booking_service.create_appointment(
                                 client_id=client.id,
                                 accountant_id=accountant.id,
                                 datetime=appointment_datetime,
                                 duration=60,
-                                notes=f"Booked via Voice AI: {text}"
+                                notes=f"Prenotazione da chiamata: {text}"
                             )
                             
-                            state["response"] = (
-                                f"✅ Appuntamento confermato!\n\n"
-                                f"📋 ID: {str(appointment.id)[:8]}...\n"
-                                f"📅 Data: {appointment.datetime.strftime('%d/%m/%Y')}\n"
-                                f"🕐 Orario: {appointment.datetime.strftime('%H:%M')}\n"
-                                f"👤 Con: {accountant.name}\n"
-                                f"🏢 Cliente: {client.company_name}\n\n"
-                                f"Riceverai una conferma via email."
+                            # Keep response short for TTS (<300 chars) and avoid technical details/IDs
+                            base = (
+                                f"Perfetto, ho fissato l'appuntamento il {appointment.datetime.strftime('%d/%m/%Y')} "
+                                f"alle {appointment.datetime.strftime('%H:%M')} con {accountant.name}."
                             )
-                            # If we adjusted the time, mention it
-                            if appointment_datetime != appointment.datetime:
-                                state["response"] += f"\n\nNota: l'orario richiesto non era disponibile. Ho prenotato il prossimo slot disponibile: {appointment.datetime.strftime('%H:%M')}"
+                            if appointment_datetime != requested_datetime:
+                                base += (
+                                    f" L'orario richiesto non era disponibile: ho scelto il primo slot utile "
+                                    f"({appointment.datetime.strftime('%H:%M')})."
+                                )
+                            state["response"] = base
 
                             state["action_taken"] = "appointment_created"
                             
@@ -495,8 +512,8 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                 except ValueError as ve:
                     logger.error(f"Validation error in booking: {ve}")
                     state["response"] = (
-                        f"Mi dispiace, non posso creare l'appuntamento:\n{str(ve)}\n\n"
-                        f"Per favore, riprova con data e ora valide."
+                        "Non riesco a fissare l'appuntamento con questi dati. "
+                        "Mi può indicare di nuovo giorno e orario, per favore?"
                     )
                     state["error"] = str(ve)
                 
@@ -629,14 +646,12 @@ def execute_action_node(state: ConversationState) -> ConversationState:
                 logger.info("Tax query rejected - redirecting to accountant")
             else:
                 state["response"] = (
-                    "Mi dispiace, non ho capito bene la tua richiesta.\n\n"
-                    "Posso aiutarti con:\n"
-                    "📅 Prenotare appuntamenti\n"
-                    "👤 Parlare con un commercialista\n"
-                    "ℹ️ Informazioni sullo studio\n\n"
-                    "Cosa ti serve?"
+                    "Mi scusi, non ho capito bene. "
+                    "Posso aiutarla a prenotare un appuntamento, parlare con un commercialista oppure darle informazioni sullo studio. "
+                    "Cosa preferisce?"
                 )
-            state["action_taken"] = "clarification_requested"
+            if not state.get("action_taken"):
+                state["action_taken"] = "clarification_requested"
             state["requires_followup"] = True
             
             logger.warning("Unknown intent, requesting clarification")
@@ -663,7 +678,38 @@ def generate_response_node(state: ConversationState) -> ConversationState:
     logger.info("=== GENERATE RESPONSE NODE ===")
     state["current_node"] = "generate_response"
     
-    response = state.get("response", "")
+    def _sanitize_for_voice(text: str) -> str:
+        if not text:
+            return ""
+
+        # Remove common emoji/symbols that TTS reads awkwardly
+        text = re.sub(r"[✅❌⚠️📅🕐👤🏢📞🎯🚀📊📤🔚🤖]", "", text)
+
+        # Normalize whitespace
+        text = re.sub(r"\s+", " ", text).strip()
+
+        # Remove UUIDs and long hex IDs
+        text = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\b[0-9a-f]{16,}\b", "", text, flags=re.IGNORECASE)
+
+        # Fix known English leak patterns
+        text = re.sub(
+            r"Slot\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+not\s+available\s+for\s+accountant\s+.*",
+            "In quell'orario non c'è disponibilità.",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(r"\bnot\s+available\b", "non disponibile", text, flags=re.IGNORECASE)
+        text = re.sub(r"\baccountant\b", "commercialista", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bclient\b", "cliente", text, flags=re.IGNORECASE)
+
+        # Enforce Twilio/TTS latency constraint
+        max_len = 290
+        if len(text) > max_len:
+            text = text[: max_len - 1].rstrip() + "…"
+        return text
+
+    response = _sanitize_for_voice(state.get("response", ""))
     intent = state.get("intent", Intent.UNKNOWN)
     
     if "action_taken" not in state:
@@ -801,6 +847,8 @@ class Orchestrator:
         elif audio_path:
             initial_state["audio_path"] = audio_path
         elif user_input:
+            initial_state["user_input"] = user_input
+        elif user_input is not None:
             initial_state["user_input"] = user_input
         else:
             raise ValueError("Must provide user_input, audio_path, or transcript")

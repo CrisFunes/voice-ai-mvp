@@ -31,7 +31,7 @@ class TestBookingFlow:
 
         # If the exact requested slot was available we should have created an appointment
         if result.get("action_taken") == "appointment_created":
-            assert "confermato" in result["response"].lower()
+            assert any(word in result["response"].lower() for word in ["appuntamento", "fissato", "perfetto"])
 
             # Verify DB write
             with get_db_session() as db:
@@ -44,7 +44,7 @@ class TestBookingFlow:
                 ).first()
 
                 assert newest.status == "pending"
-                assert "Booked via Voice AI" in newest.notes
+                assert "Prenotazione" in (newest.notes or "")
 
                 # If user explicitly requested a time, appointment hour should match or be the nearest slot
                 # (We accept nearby slot if exact time unavailable)
@@ -87,31 +87,30 @@ class TestBookingFlow:
 
 
 class TestTaxQueryFlow:
-    """Test RAG-based tax queries"""
+    """Tax queries are rejected (no fiscal advice)"""
     
     def test_tax_query_returns_rag_response(self):
-        """Test that tax queries use RAG engine"""
+        """Tax queries should be rejected and routed to a human"""
         orchestrator = Orchestrator()
         
         result = orchestrator.process(
             user_input="Quando scade la dichiarazione IVA?"
         )
-        
-        assert result["intent"] == Intent.TAX_QUERY
-        assert result["action_taken"] == "tax_query_answered"
-        assert len(result["response"]) > 50  # Non-trivial response
-        assert "sources" in result["entities"]  # RAG provides sources
+
+        assert result["intent"] == Intent.UNKNOWN
+        assert result.get("action_taken") == "tax_query_rejected"
+        assert any(word in result["response"].lower() for word in ["non posso", "consulenza", "appuntamento", "commercialista"])
     
     def test_tax_query_includes_disclaimer(self):
-        """Test that all tax responses include disclaimer"""
+        """Deduction-related questions should be rejected as tax queries"""
         orchestrator = Orchestrator()
         
         result = orchestrator.process(
             user_input="Posso dedurre le spese di carburante?"
         )
-        
-        assert "⚠️" in result["response"] or \
-               "informazione generale" in result["response"].lower()
+
+        assert result["intent"] == Intent.UNKNOWN
+        assert result.get("action_taken") == "tax_query_rejected"
 
 
 class TestRoutingFlow:

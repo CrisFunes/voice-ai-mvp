@@ -107,13 +107,9 @@ class TestContextSwitching:
             context=context
         )
         
-        # Should switch to tax query OR handle mixed intent
-        assert result2["intent"] in [Intent.TAX_QUERY, Intent.UNKNOWN]
-        
-        # Response should mention IVA
-        assert "iva" in result2["response"].lower() or \
-               "scade" in result2["response"].lower() or \
-               "tasse" in result2["response"].lower()
+        # Tax queries are intentionally rejected (no fiscal advice)
+        assert result2["intent"] == Intent.UNKNOWN
+        assert any(word in result2["response"].lower() for word in ["non posso", "consulenza", "appuntamento", "commercialista"])
     
     def test_resume_after_interruption(self):
         """User should be able to return to original topic"""
@@ -188,8 +184,8 @@ class TestAmbiguityHandling:
         )
         
         # System should handle gracefully
-        # Priority: Handle first intent OR ask for clarification
-        assert result["intent"] in [Intent.TAX_QUERY, Intent.APPOINTMENT_BOOKING, Intent.UNKNOWN]
+        # Tax parts are rejected; booking can proceed or request clarification
+        assert result["intent"] in [Intent.APPOINTMENT_BOOKING, Intent.UNKNOWN]
         
         # Response should acknowledge complexity
         assert len(result["response"]) > 20  # Non-trivial response

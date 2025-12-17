@@ -45,46 +45,32 @@ precisione alla sua domanda. Vuole che le fissi un appuntamento?"
 # ============================================================================
 # TAX QUERY REJECTION RESPONSE
 # ============================================================================
-TAX_QUERY_REJECTION = """Mi dispiace, non posso fornire consulenza fiscale o rispondere a domande su tasse, IVA, scadenze o normative.
-
-Sono la receptionist virtuale dello studio e posso aiutarla con:
-📅 Prenotare un appuntamento
-👤 Metterla in contatto con un commercialista
-ℹ️ Informazioni sullo studio (orari, indirizzo)
-
-Per la sua domanda fiscale, le consiglio vivamente di:
-✅ Prenotare un appuntamento con uno dei nostri commercialisti
-✅ Chiamare direttamente lo studio al +39 02 1234567
-
-Vuole che le fissi un appuntamento?"""
+TAX_QUERY_REJECTION = (
+	"Mi dispiace, non posso rispondere a domande fiscali o dare consulenza. "
+	"Posso però fissarle un appuntamento con un commercialista o metterla in contatto con lo studio. "
+	"Vuole prenotare?"
+)
 
 
 # ============================================================================
 # FALLBACK RESPONSES (mantieni queste invariate)
 # ============================================================================
-NO_RESULTS_RESPONSE = """Mi dispiace, non ho trovato informazioni rilevanti nei documenti disponibili per rispondere a questa domanda.
+NO_RESULTS_RESPONSE = (
+	"Mi dispiace, non ho informazioni sufficienti per rispondere. "
+	"Se desidera, posso fissarle un appuntamento con un commercialista oppure può chiamare lo studio al +39 02 1234567."
+)
 
-Le consiglio di contattare direttamente lo studio commercialista per questioni specifiche al numero +39 02 1234567.
+API_ERROR_RESPONSE = (
+	"Mi scusi, c'è stato un problema tecnico. "
+	"Può riprovare tra poco oppure chiamare lo studio al +39 02 1234567."
+)
 
-⚠️ Questa è un'informazione generale. Per la sua situazione specifica, consulti un commercialista."""
-
-API_ERROR_RESPONSE = """Mi dispiace, si è verificato un errore tecnico nel processare la sua richiesta.
-
-Per favore riprovi tra qualche momento. Se il problema persiste, contatti il supporto tecnico o lo studio direttamente.
-
-⚠️ Questa è un'informazione generale. Per la sua situazione specifica, consulti un commercialista."""
-
-EMPTY_QUERY_RESPONSE = """Per favore, mi formuli una domanda specifica in modo che possa aiutarla al meglio.
-
-Esempi di domande che posso gestire:
-- "Quando scade la dichiarazione IVA trimestrale?"
-- "Posso dedurre le spese di carburante per la mia attività?"
-- "Cos'è l'IRES e quali sono le aliquote attuali?"
-- "Quali sono le scadenze fiscali di dicembre?"
-
-⚠️ Questa è un'informazione generale. Per la sua situazione specifica, consulti un commercialista."""
+EMPTY_QUERY_RESPONSE = (
+	"Mi dice pure in breve cosa le serve? "
+	"Se è una domanda fiscale, posso fissarle un appuntamento con un commercialista."
+)
 
 # ============================================================================
 # DISCLAIMER (Always appended to responses)
 # ============================================================================
-MANDATORY_DISCLAIMER = "\n\n⚠️ Questa è un'informazione generale. Per la sua situazione specifica, consulti un commercialista dello studio."
+MANDATORY_DISCLAIMER = ""
