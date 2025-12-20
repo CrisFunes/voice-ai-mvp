@@ -27,8 +27,19 @@ from datetime import datetime
 import base64
 from typing import Dict, List
 
-# Add parent directory to path to import voice_handler
-sys.path.insert(0, str(Path(__file__).parent))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# This file is a manual comparison script (generates audio samples). It is not an
+# automated pytest test, but it lives under tests/ for convenience.
+if __name__ != "__main__":
+    import pytest
+
+    pytest.skip(
+        "Manual script (not an automated test). Run: python tests/test_tts_accent_comparison.py",
+        allow_module_level=True,
+    )
 
 try:
     from openai import OpenAI

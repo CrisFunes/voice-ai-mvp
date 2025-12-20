@@ -9,6 +9,14 @@ sin necesidad de hacer llamadas reales.
 Ejecutar: python test_twilio_manual.py
 """
 
+if __name__ != "__main__":
+    import pytest
+
+    pytest.skip(
+        "Manual interactive script (not an automated test). Run: python tests/test_twilio_manual.py",
+        allow_module_level=True,
+    )
+
 import sys
 import time
 import requests

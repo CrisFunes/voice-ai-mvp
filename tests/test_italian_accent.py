@@ -1,8 +1,29 @@
 # test_italian_accent.py
-"""Quick test for Italian accent TTS"""
+"""Quick manual test for Italian accent TTS (generates audio files)."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ARCHIVE_DIR = REPO_ROOT / "archive"
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(ARCHIVE_DIR) not in sys.path:
+    sys.path.insert(0, str(ARCHIVE_DIR))
+
+if __name__ != "__main__":
+    import pytest
+
+    pytest.skip(
+        "Manual audio-generation script (not an automated test). Run: python tests/test_italian_accent.py",
+        allow_module_level=True,
+    )
 
 from voice_handler import VoiceHandler
-from pathlib import Path
 
 def test_italian_accent():
     """Test the new accent-steered TTS"""

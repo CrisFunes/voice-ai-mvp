@@ -49,6 +49,19 @@ class TestBookingFlow:
                 # If user explicitly requested a time, appointment hour should match or be the nearest slot
                 # (We accept nearby slot if exact time unavailable)
                 assert isinstance(newest.datetime.hour, int)
+
+        elif result.get("action_taken") in {
+            "request_client_name",
+            "request_date",
+            "request_time",
+            "request_details",
+        }:
+            # Follow-up is a valid state (the agent is collecting missing booking entities).
+            assert "?" in result["response"]
+            # No DB write should have happened yet.
+            with get_db_session() as db:
+                count_after = db.query(Appointment).count()
+                assert count_after == count_before
         else:
             # If we couldn't create appointment, the response should indicate failure
             assert "non" in result["response"].lower() or "errore" in result.get("error", "").lower()
