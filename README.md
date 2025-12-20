@@ -23,11 +23,12 @@ Proof of Concept for enterprise VUI-RAG system for Italian accounting firms.
 
 ## What's NOT in Demo (Enterprise Only)
 
-❌ Telephony integration (Twilio)
-❌ Client database & function calling
-❌ Real-time streaming
-❌ Appointment booking
-❌ Call routing logic
+✅ Telephony integration (Twilio) via Flask webhooks (`server.py`)
+✅ Optional real-time streaming (Twilio Media Streams) (`server_realtime.py`)
+
+Enterprise hardening still missing:
+- Redis/session persistence
+- Horizontal scaling, auth, observability, production deployment
 
 **This demo proves the core AI pipeline works.** 
 Enterprise features are architectural additions, not core rewrites.
@@ -60,6 +61,7 @@ This MVP demonstrates an intelligent fiscal advisory system that answers questio
 - Windows 10/11, macOS, or Linux
 - OpenAI API key
 - Anthropic API key
+- (Realtime mode) Deepgram API key
 
 ---
 
@@ -109,6 +111,11 @@ Edit `.env` and add your API keys:
 ```
 OPENAI_API_KEY=sk-proj-your-key-here
 ANTHROPIC_API_KEY=sk-ant-your-key-here
+DEEPGRAM_API_KEY=dg-your-key-here  # only needed for realtime mode
+
+# required for Twilio Media Streams TwiML
+# example: https://xxxx.ngrok-free.app
+PUBLIC_BASE_URL=https://your-public-domain
 ```
 
 **Important:** Never commit `.env` to version control.
@@ -182,6 +189,25 @@ voice-ai-mvp/
    - Speak the response aloud
 
 ---
+
+## Twilio (classic, Gather-based)
+
+- Run: `python server.py`
+- Configure Twilio Voice webhook to: `https://<public>/voice/incoming`
+
+## Twilio Realtime (Media Streams + WebSocket)
+
+This mode approximates “ChatGPT Advanced Voice” style by streaming:
+Deepgram ASR → Claude (streaming rewrite) → OpenAI TTS (chunked) → Twilio bidirectional Media Streams.
+
+- Run: `python server_realtime.py`
+- Start a tunnel (example): `ngrok http 5000`
+- Set `PUBLIC_BASE_URL` to your tunnel URL.
+- Configure Twilio Voice webhook to: `https://<public>/voice/incoming` (served by `server_realtime.py`)
+
+Notes:
+- Latency depends heavily on network + model response times; the pipeline is optimized for early audio.
+- The receptionist role is enforced; fiscal/tax questions are rejected.
 
 ## Troubleshooting
 
