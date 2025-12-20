@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Test Suite para Twilio Voice Server
-====================================
+Test Suite for Twilio Voice Server
+=================================
 
-Suite completa de tests para verificar:
-1. Endpoints funcionan correctamente
-2. Cache de respuestas rápidas
-3. Manejo de errores
-4. Latencia de respuestas
-5. Detección de despedidas
-6. Sesiones y metadata
+Full test suite to verify:
+1. Endpoints work correctly
+2. Fast-response caching
+3. Error handling
+4. Response latency
+5. Farewell/hangup detection
+6. Sessions and metadata
 
-Ejecutar: python test_twilio_integration.py
+Run: python archive/test_twilio_integration.py
 """
 
 import sys
@@ -22,13 +22,13 @@ from loguru import logger
 from xml.etree import ElementTree as ET
 
 # ============================================================================
-# CONFIGURACIÓN
+# CONFIGURATION
 # ============================================================================
 
-BASE_URL = "http://localhost:5000"  # Ajustar si server corre en otro puerto
-TEST_TIMEOUT = 30  # Timeout para requests HTTP (aumentado para queries complejas)
+BASE_URL = "http://localhost:5000"  # Adjust if the server runs on a different port
+TEST_TIMEOUT = 30  # HTTP request timeout (increased for longer flows)
 
-# Colores para output
+# Output colors
 GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"

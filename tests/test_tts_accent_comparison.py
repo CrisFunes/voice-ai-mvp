@@ -3,8 +3,8 @@
 TTS Accent Comparison Script
 =============================
 
-Genera muestras de audio usando diferentes modelos y configuraciones TTS
-para comparar calidad de acento italiano.
+Generates audio samples using different TTS models and configurations
+to compare Italian accent quality.
 
 Modelos probados:
 1. OpenAI tts-1 (standard quality, cheaper)
@@ -52,28 +52,28 @@ except ImportError as e:
 
 
 # ============================================================================
-# TEST TEXTS - Variedad de contenido italiano
+# TEST TEXTS - Variety of Italian content
 # ============================================================================
 
 TEST_TEXTS = {
     "greeting": {
-        "label": "1. Saludo profesional",
+        "label": "1. Professional greeting",
         "text": "Buongiorno, sono il suo commercialista di fiducia. Come posso aiutarla oggi?"
     },
     "technical": {
-        "label": "2. Términos técnicos fiscales",
+        "label": "2. Technical fiscal terms",
         "text": "La dichiarazione IVA trimestrale deve essere presentata entro il giorno quindici del mese successivo al trimestre di riferimento."
     },
     "numbers": {
-        "label": "3. Números y porcentajes",
+        "label": "3. Numbers and percentages",
         "text": "L'aliquota IRES ordinaria è del ventiquattro per cento, mentre per le società di capitali l'IVA può variare dal quattro al ventidue per cento."
     },
     "complex": {
-        "label": "4. Respuesta compleja (real)",
+        "label": "4. Complex response (real)",
         "text": "Dunque, per quanto riguarda la sua domanda sulle deduzioni fiscali, le spiego meglio. Secondo la normativa vigente, le spese di carburante sono deducibili al venti per cento per i veicoli aziendali. Tuttavia, se il veicolo è utilizzato esclusivamente per l'attività professionale, la percentuale di deduzione può aumentare fino all'ottanta per cento. Le consiglio di conservare tutti i documenti giustificativi."
     },
     "difficult_words": {
-        "label": "5. Palabras difíciles de pronunciar",
+        "label": "5. Difficult-to-pronounce words",
         "text": "Gli adempimenti fiscali richiedono particolare attenzione: dichiarazione, registrazione, liquidazione, ritenuta d'acconto, contribuzione previdenziale."
     }
 }
@@ -91,7 +91,7 @@ TTS_CONFIGS = {
         "voice": "alloy",
         "method": "standard",
         "cost_per_1k_chars": 0.015,
-        "description": "Modelo estándar, calidad básica, acento neutral/anglófono"
+        "description": "Standard model, basic quality, neutral/English-leaning accent"
     },
     "tts1_nova": {
         "label": "OpenAI tts-1 (standard) - Voice: nova",
@@ -99,7 +99,7 @@ TTS_CONFIGS = {
         "voice": "nova",
         "method": "standard",
         "cost_per_1k_chars": 0.015,
-        "description": "Modelo estándar, voz femenina, acento neutral"
+        "description": "Standard model, female voice, neutral accent"
     },
     "tts1_echo": {
         "label": "OpenAI tts-1 (standard) - Voice: echo",
@@ -107,7 +107,7 @@ TTS_CONFIGS = {
         "voice": "echo",
         "method": "standard",
         "cost_per_1k_chars": 0.015,
-        "description": "Modelo estándar, voz masculina, acento neutral"
+        "description": "Standard model, male voice, neutral accent"
     },
     
     # HD TTS models
@@ -194,7 +194,7 @@ Zero tracce di pronuncia straniera. Parli italiano dalla nascita."""
 # ============================================================================
 
 class TTSComparator:
-    """Compara diferentes modelos y configuraciones TTS"""
+    """Compare different TTS models and configurations."""
     
     def __init__(self, output_dir: str = "test_audio_samples"):
         """Initialize TTS comparator"""
@@ -603,16 +603,16 @@ def main():
     
     print("\n" + "="*70)
     print("  TTS ACCENT COMPARISON TOOL")
-    print("  Genera muestras de audio para comparar acentos")
+    print("  Generates audio samples to compare accents")
     print("="*70 + "\n")
     
     # Ask user which configs to test
-    print("¿Qué configuraciones quieres probar?\n")
-    print("1. TODAS (recomendado) - ~7 configs × 5 textos = 35 samples (~$0.50)")
-    print("2. SOLO COMPARACIÓN RÁPIDA - 3 mejores opciones × 2 textos = 6 samples (~$0.10)")
-    print("3. PERSONALIZADO - selecciona configs manualmente\n")
+    print("Which configurations do you want to test?\n")
+    print("1. ALL (recommended) - ~7 configs × 5 texts = 35 samples (~$0.50)")
+    print("2. QUICK COMPARISON - 3 best options × 2 texts = 6 samples (~$0.10)")
+    print("3. CUSTOM - select configs manually\n")
     
-    choice = input("Selección (1/2/3) [default: 2]: ").strip() or "2"
+    choice = input("Selection (1/2/3) [default: 2]: ").strip() or "2"
     
     if choice == "1":
         # All configs
@@ -628,11 +628,11 @@ def main():
         text_keys = ["greeting", "technical"]  # Just 2 representative texts
     else:
         # Custom selection
-        print("\nConfigs disponibles:")
+        print("\nAvailable configs:")
         for i, (key, cfg) in enumerate(TTS_CONFIGS.items(), 1):
             print(f"{i}. {cfg['label']}")
         
-        selected = input("\nNúmeros separados por coma (ej: 1,3,5): ").strip()
+        selected = input("\nComma-separated numbers (e.g., 1,3,5): ").strip()
         indices = [int(x.strip())-1 for x in selected.split(",")]
         config_keys = [list(TTS_CONFIGS.keys())[i] for i in indices]
         

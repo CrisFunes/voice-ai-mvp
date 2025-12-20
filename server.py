@@ -93,8 +93,8 @@ VOICE_CONFIG = {
 @app.route("/voice/incoming", methods=["GET", "POST"])
 def incoming_call():
     """
-    Maneja llamadas entrantes.
-    Solo envía saludo inicial - NO procesa input todavía.
+    Handle incoming calls.
+    Sends the initial greeting only (does NOT process user input yet).
     """
     call_sid = request.values.get("CallSid", "unknown")
     from_number = request.values.get("From", "unknown")
@@ -114,17 +114,17 @@ def incoming_call():
     session_data.setdefault("context", {})
     session_data["context"].setdefault("client_phone", from_number)
     
-    # ✅ CORRECTO: Solo enviamos saludo, NO llamamos orchestrator
+    # ✅ Correct: send greeting only; do NOT call the orchestrator here.
     response = VoiceResponse()
     
-    # Saluto iniziale (breve, naturale, senza riferimenti a "AI")
+    # Initial greeting (short, natural, no references to "AI")
     response.say(
         "Buongiorno, Studio Commercialista. In cosa posso esserLe utile?",
         language="it-IT",
         voice="Google.it-IT-Wavenet-C"
     )
     
-    # Gather con configuración optimizada
+    # Gather with optimized settings
     gather = Gather(
         input="speech",
         language="it-IT",
@@ -133,13 +133,13 @@ def incoming_call():
         speech_model="phone_call",
         # Hints tuned for scheduling + short numeric replies
         hints=VOICE_CONFIG["hints"],
-        bargeIn=True,  # Permite interrumpir
-        enhanced=True  # Usa modelo ASR mejorado
+        bargeIn=True,  # Allow barge-in
+        enhanced=True  # Use enhanced ASR
     )
     
     response.append(gather)
     
-    # Fallback se non arriva input
+    # Fallback if no input is received
     response.say(
         "Non ho ricevuto risposta. Può richiamare quando desidera. Arrivederci.",
         language="it-IT",

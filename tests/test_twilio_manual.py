@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Manual Test Script - Simula conversaciones completas
-=====================================================
+Manual Test Script - Simulate complete conversations
+====================================================
 
-Script interactivo para probar diferentes flujos de conversación
-sin necesidad de hacer llamadas reales.
+Interactive script to exercise end-to-end conversation flows
+without placing real phone calls.
 
-Ejecutar: python test_twilio_manual.py
+Run: python tests/test_twilio_manual.py
 """
 
 if __name__ != "__main__":
@@ -25,20 +25,20 @@ from loguru import logger
 BASE_URL = "http://localhost:5000"
 
 # ============================================================================
-# ESCENARIOS DE PRUEBA
+# TEST SCENARIOS
 # ============================================================================
 
 SCENARIOS = {
     "1": {
-        "name": "Consulta rápida de horarios (CACHE HIT)",
-        "description": "Pregunta simple que debería resolverse con cache",
+        "name": "Quick office hours (CACHE HIT)",
+        "description": "Simple question that should be served from cache",
         "conversation": [
-            {"user": "orari", "expected_latency": 500},  # Cache debe ser <500ms
+            {"user": "orari", "expected_latency": 500},  # Cache should be <500ms
         ]
     },
     "2": {
-        "name": "Reserva de cita",
-        "description": "Flujo completo de booking",
+        "name": "Appointment booking",
+        "description": "Full booking flow",
         "conversation": [
             {"user": "Vorrei prenotare un appuntamento", "expected_latency": 3000},
             {"user": "Martedì alle 10", "expected_latency": 3000},
@@ -47,8 +47,8 @@ SCENARIOS = {
         ]
     },
     "3": {
-        "name": "Consulta fiscal compleja",
-        "description": "Pregunta que requiere RAG",
+        "name": "Complex tax question (should be rejected)",
+        "description": "Tax query: expected to be rejected and redirected",
         "conversation": [
             {"user": "Come funziona la deduzione IVA per le auto aziendali?", "expected_latency": 4000},
             {"user": "E per le spese di carburante?", "expected_latency": 4000},
@@ -56,8 +56,8 @@ SCENARIOS = {
         ]
     },
     "4": {
-        "name": "Test de interrupciones",
-        "description": "Usuario cambia de tema abruptamente",
+        "name": "Topic shift / interruption",
+        "description": "User changes topic abruptly",
         "conversation": [
             {"user": "Vorrei sapere gli orari", "expected_latency": 3000},
             {"user": "Ah no aspetta, voglio prenotare un appuntamento invece", "expected_latency": 3000},
@@ -65,16 +65,16 @@ SCENARIOS = {
         ]
     },
     "5": {
-        "name": "Input vacío/silencio",
-        "description": "Simula cuando el usuario no habla",
+        "name": "Empty input / silence",
+        "description": "Simulates when the user does not speak",
         "conversation": [
             {"user": "", "expected_latency": 1000},  # Empty input
             {"user": "orari", "expected_latency": 500},  # Should recover
         ]
     },
     "6": {
-        "name": "Múltiples consultas en una llamada",
-        "description": "Conversación larga sin colgar",
+        "name": "Multiple questions in one call",
+        "description": "Long conversation without hanging up",
         "conversation": [
             {"user": "orari", "expected_latency": 500},
             {"user": "indirizzo", "expected_latency": 500},
@@ -84,8 +84,8 @@ SCENARIOS = {
         ]
     },
     "7": {
-        "name": "Respuesta larga (test truncamiento)",
-        "description": "Pregunta que genera respuesta muy larga",
+        "name": "Long response (truncation test)",
+        "description": "Question that tends to generate a very long response",
         "conversation": [
             {"user": "Spiegami tutto sulla dichiarazione dei redditi, le scadenze, le deduzioni, tutto quello che devo sapere", "expected_latency": 4000},
         ]
@@ -246,13 +246,13 @@ def run_scenario(scenario_key: str, call_sid: str = None):
 def interactive_mode():
     """Interactive conversation mode"""
     print_header("INTERACTIVE MODE")
-    print("Simula una conversación real paso a paso")
-    print("Escribe 'quit' para salir, 'scenarios' para ver escenarios predefinidos\n")
+    print("Simulates a real conversation step-by-step")
+    print("Type 'quit' to exit, 'scenarios' to list predefined scenarios\n")
     
     call_sid = f"INTERACTIVE_{int(time.time())}"
     
     # Start call
-    print("📞 Iniciando llamada...")
+    print("📞 Starting call...")
     try:
         response = requests.post(
             f"{BASE_URL}/voice/incoming",
@@ -276,17 +276,17 @@ def interactive_mode():
         user_input = input(f"\n👤 USER [Turn {turn_num}]: ").strip()
         
         if user_input.lower() == 'quit':
-            print("\n👋 Saliendo...")
+            print("\n👋 Exiting...")
             break
         
         if user_input.lower() == 'scenarios':
-            print("\nEscenarios disponibles:")
+            print("\nAvailable scenarios:")
             for key, scenario in SCENARIOS.items():
                 print(f"  {key}. {scenario['name']}")
             continue
         
         if not user_input:
-            print("⚠️  Input vacío - simulando silencio")
+            print("⚠️  Empty input - simulating silence")
         
         try:
             start_time = time.time()
@@ -309,7 +309,7 @@ def interactive_mode():
             print(f"\n🤖 ASSISTANT ({latency:.0f}ms): {ai_response}")
             
             if check_hangup(response.text):
-                print("\n📞 Llamada finalizada")
+                print("\n📞 Call ended")
                 break
             
         except Exception as e:
@@ -339,33 +339,33 @@ def main():
     
     while True:
         print("\n📋 MENU:")
-        print("\n  ESCENARIOS PREDEFINIDOS:")
+        print("\n  PREDEFINED SCENARIOS:")
         for key, scenario in SCENARIOS.items():
             print(f"    {key}. {scenario['name']}")
         
-        print("\n  OTROS:")
-        print("    i. Modo interactivo (conversación libre)")
-        print("    a. Ejecutar TODOS los escenarios")
-        print("    q. Salir")
+        print("\n  OTHER:")
+        print("    i. Interactive mode (free-form conversation)")
+        print("    a. Run ALL scenarios")
+        print("    q. Quit")
         
-        choice = input("\n👉 Selecciona una opción: ").strip().lower()
+        choice = input("\n👉 Select an option: ").strip().lower()
         
         if choice == 'q':
-            print("\n👋 Adiós!\n")
+            print("\n👋 Goodbye!\n")
             break
         
         elif choice == 'i':
             interactive_mode()
         
         elif choice == 'a':
-            print("\n🚀 Ejecutando TODOS los escenarios...\n")
+            print("\n🚀 Running ALL scenarios...\n")
             results = []
             for key in SCENARIOS.keys():
                 passed = run_scenario(key)
                 results.append((SCENARIOS[key]['name'], passed))
                 time.sleep(1)
             
-            print_header("RESULTADOS FINALES")
+            print_header("FINAL RESULTS")
             for name, passed in results:
                 status = "✅ PASS" if passed else "⚠️  WARNINGS"
                 print(f"  {status}: {name}")
@@ -374,12 +374,12 @@ def main():
             run_scenario(choice)
         
         else:
-            print("❌ Opción inválida")
+            print("❌ Invalid option")
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n👋 Interrumpido por usuario\n")
+        print("\n\n👋 Interrupted by user\n")
         sys.exit(0)
